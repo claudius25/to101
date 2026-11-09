@@ -13,18 +13,23 @@
   </div>
 </section>
 
-<aside class="dev" [class.dev--open]="panelOpen()">
-  <button
-    type="button"
-    class="dev__handle"
-    [attr.aria-expanded]="panelOpen()"
-    [attr.aria-label]="panelOpen() ? 'Hide dev panel' : 'Show dev panel'"
-    (click)="panelOpen.set(!panelOpen())"
-  >
-    {{ panelOpen() ? '›' : 'DEV' }}
-  </button>
+<!-- Hidden gesture target: three taps here reveal the dev panel. -->
+<div class="dev-hotspot" aria-hidden="true" (click)="onCornerTap()"></div>
 
+<aside class="dev" [class.dev--open]="panelOpen()">
   <div class="dev__body">
+    <div class="dev__head">
+      <h2 class="dev__title">Dev panel</h2>
+      <button
+        type="button"
+        class="dev__close"
+        aria-label="Close dev panel"
+        (click)="panelOpen.set(false)"
+      >
+        ×
+      </button>
+    </div>
+
     <h2 class="dev__title">Camera</h2>
 
     <div class="dev__field">

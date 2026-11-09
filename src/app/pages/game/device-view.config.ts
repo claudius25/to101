@@ -50,14 +50,14 @@ export const DEVICE_VIEW_CONFIG: DeviceViewConfig = {
     fov: 35,
     azimuth: 0,
     elevation: 68,
-    roll: 0.5,
+    roll: 1,
     margin: 1,
     autoRotate: false,
   },
   device: {
     pitch: 0,
     yaw: 0,
-    roll: 5,
+    roll: 8,
   },
 };
 

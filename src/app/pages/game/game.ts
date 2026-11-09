@@ -40,6 +40,8 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 
 const MODEL_URL = 'assets/aluminium-device-game.glb';
 const ELEVATION_LIMIT = 89;
+const SECRET_TAPS = 3;
+const SECRET_TAP_WINDOW_MS = 800;
 
 type Status = 'loading' | 'ready' | 'error';
 type CopyState = 'idle' | 'copied' | 'failed';
@@ -109,6 +111,8 @@ export class Game implements AfterViewInit, OnDestroy {
   private environment: Texture | null = null;
   private model: Object3D | null = null;
   private frameHandle = 0;
+  private tapCount = 0;
+  private tapTimer: ReturnType<typeof setTimeout> | null = null;
 
   private readonly scene = new Scene();
   /** Rotating this instead of the model keeps the pivot on the device's centre. */
@@ -133,6 +137,11 @@ export class Game implements AfterViewInit, OnDestroy {
   ngOnDestroy(): void {
     cancelAnimationFrame(this.frameHandle);
 
+    if (this.tapTimer !== null) {
+      clearTimeout(this.tapTimer);
+      this.tapTimer = null;
+    }
+
     if (this.model) {
       this.pivot.remove(this.model);
       this.disposeObject(this.model);
@@ -150,6 +159,26 @@ export class Game implements AfterViewInit, OnDestroy {
 
   protected onToggle(target: WritableSignal<boolean>, event: Event): void {
     target.set((event.target as HTMLInputElement).checked);
+  }
+
+  /** Three taps in the top-left corner, in quick succession, toggle the dev panel. */
+  protected onCornerTap(): void {
+    if (this.tapTimer !== null) {
+      clearTimeout(this.tapTimer);
+      this.tapTimer = null;
+    }
+
+    this.tapCount += 1;
+    if (this.tapCount >= SECRET_TAPS) {
+      this.tapCount = 0;
+      this.panelOpen.update((open) => !open);
+      return;
+    }
+
+    this.tapTimer = setTimeout(() => {
+      this.tapCount = 0;
+      this.tapTimer = null;
+    }, SECRET_TAP_WINDOW_MS);
   }
 
   /** Restores whatever is currently committed to device-view.config.ts. */
