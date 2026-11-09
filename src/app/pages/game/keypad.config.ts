@@ -39,10 +39,10 @@ export interface KeypadConfig {
 
 export const KEYPAD_CONFIG: KeypadConfig = {
   axis: 'y',
-  travelMetres: 0.0004,
+  travelMetres: 0.0006,
   pressDurationMs: 55,
   pressEasing: 'easeOutQuad',
-  releaseDurationMs: 130,
+  releaseDurationMs: 100,
   releaseEasing: 'easeOutBack',
   maxHoldMs: 4000,
   keys: [
