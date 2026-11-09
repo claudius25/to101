@@ -99,13 +99,6 @@ local `phi = -90°`. Measured from the GLB:
 Hence totals of 1–12. The `offsetDeg` values in the config are derived from those measurements,
 so the correct face is already upright — change them only if the model is re-exported.
 
-> **Node names.** three's `GLTFLoader` passes every node name through
-> `PropertyBinding.sanitizeNodeName`, which turns spaces into underscores and strips
-> `[ ] . : /`. So `Button • middle 3 • 21.25 mm` arrives as `Button_•_middle_3_•_2125_mm`.
-> `dice-machine.ts` normalises both sides before matching, which is why the config can keep
-> using readable fragments like `middle 3`. If a node can't be found, the game screen shows a
-> `Missing nodes: …` message.
-
 ### Tuning
 
 [`dice.config.ts`](./src/app/pages/game/dice.config.ts) holds every knob: lever axis, pull angle
@@ -119,6 +112,38 @@ Available easings: `linear`, `easeOutQuad`, `easeOutCubic`, `easeOutQuint`, `eas
 
 The dev panel's **Dice** section shows the last result as `total (wheelOne + wheelTwo)` and warns
 if any rig node could not be found in the model.
+
+## Keypad
+
+The six grey keys (a 3×2 grid) and the double-height orange Enter key depress when pressed and
+spring back on release. [`keypad.ts`](./src/app/pages/game/keypad.ts) moves each cap along its own
+down axis, so the keypad's slight tilt is respected, and restores the exact rest position.
+
+[`keypad.config.ts`](./src/app/pages/game/keypad.config.ts) holds the knobs: travel axis and
+distance, press/release durations and easings, an auto-release timeout, and the key list with
+per-key travel overrides. The caps are only 1 mm tall, so `travelMetres` (default `0.0004`) must
+stay well under a millimetre.
+
+Key ids reported by `Keypad.onPress`, in reading order: `close`, `left`, `up`, `down`, `settings`,
+`right`, `enter`. The dev panel's **Keypad** section shows the last one pressed.
+
+## Node lookups
+
+Both rigs resolve model nodes through `findNode` in
+[`rig-utils.ts`](./src/app/pages/game/rig-utils.ts), which also hosts the shared easings, axis
+vectors and `Tween`.
+
+Matching is deliberately forgiving, because three's `GLTFLoader` rewrites names via
+`PropertyBinding.sanitizeNodeName` (spaces become underscores, `[ ] . : /` are stripped) and the
+model decorates names with bullets:
+
+```
+"Key • column 2 • upper grey"  ->  "Key_•_column_2_•_upper_grey"
+```
+
+So a config fragment is matched as **whole words in order**: `column 2 upper` matches the node
+above, while `middle 2` will not match `Button_•_middle_3_•_2125_mm` even though `2125` contains
+a `2`. If a node can't be found, the game screen shows `Missing nodes: …`.
 
 ## Development server
 

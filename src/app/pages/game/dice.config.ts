@@ -9,17 +9,10 @@
  * Node lookups are substring matches, so the short fragments below are enough.
  */
 
-export type Axis = 'x' | 'y' | 'z';
-export type Spin = 1 | -1;
+import { Axis, EasingName, Spin } from './rig-utils';
 
-export type EasingName =
-  | 'linear'
-  | 'easeOutQuad'
-  | 'easeOutCubic'
-  | 'easeOutQuint'
-  | 'easeInOutCubic'
-  | 'easeOutBack'
-  | 'easeOutElastic';
+export type { Axis, EasingName, Spin } from './rig-utils';
+export { EASINGS } from './rig-utils';
 
 /** `uniform-total` makes every total 1-12 equally likely; `uniform-faces` rolls two real dice. */
 export type RollDistribution = 'uniform-total' | 'uniform-faces';
@@ -156,25 +149,6 @@ export const DICE_CONFIG: DiceConfig = {
     minSpinMs: 450,
     maxHoldMs: 0,
     pressAnywhere: false,
-  },
-};
-
-export const EASINGS: Record<EasingName, (t: number) => number> = {
-  linear: (t) => t,
-  easeOutQuad: (t) => 1 - (1 - t) ** 2,
-  easeOutCubic: (t) => 1 - (1 - t) ** 3,
-  easeOutQuint: (t) => 1 - (1 - t) ** 5,
-  easeInOutCubic: (t) => (t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2),
-  easeOutBack: (t) => {
-    const overshoot = 1.70158;
-    return 1 + (overshoot + 1) * (t - 1) ** 3 + overshoot * (t - 1) ** 2;
-  },
-  easeOutElastic: (t) => {
-    if (t === 0 || t === 1) {
-      return t;
-    }
-    const period = (2 * Math.PI) / 3;
-    return 2 ** (-10 * t) * Math.sin((t * 10 - 0.75) * period) + 1;
   },
 };
 

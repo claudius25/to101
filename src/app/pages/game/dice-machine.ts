@@ -1,48 +1,10 @@
 import { Object3D, Quaternion, Vector3 } from 'three';
 
 import { DiceRoll } from '../../services/dice.service';
-import { Axis, DICE_CONFIG, DiceConfig, EASINGS, EasingName, WheelConfig } from './dice.config';
+import { DICE_CONFIG, DiceConfig, WheelConfig } from './dice.config';
+import { AXES, EASINGS, Tween, findNode, isDescendantOf } from './rig-utils';
 
 export type DiceMachineState = 'idle' | 'spinning' | 'settling';
-
-const AXES: Record<Axis, Vector3> = {
-  x: new Vector3(1, 0, 0),
-  y: new Vector3(0, 1, 0),
-  z: new Vector3(0, 0, 1),
-};
-
-/** Time-based tween between two numbers, restartable mid-flight. */
-class Tween {
-  value = 0;
-
-  private from = 0;
-  private to = 0;
-  private elapsed = 0;
-  private duration = 0;
-  private ease = EASINGS.linear;
-
-  start(to: number, durationMs: number, easing: EasingName): void {
-    this.from = this.value;
-    this.to = to;
-    this.elapsed = 0;
-    this.duration = Math.max(0, durationMs);
-    this.ease = EASINGS[easing];
-
-    if (this.duration === 0) {
-      this.value = to;
-    }
-  }
-
-  update(deltaMs: number): void {
-    if (this.duration === 0 || this.elapsed >= this.duration) {
-      this.value = this.to;
-      return;
-    }
-
-    this.elapsed = Math.min(this.elapsed + deltaMs, this.duration);
-    this.value = this.from + (this.to - this.from) * this.ease(this.elapsed / this.duration);
-  }
-}
 
 class Wheel {
   object: Object3D | null = null;
@@ -215,6 +177,11 @@ export class DiceMachine {
     return this.leverObject ? [this.leverObject] : [];
   }
 
+  /** True when a raycast hit belongs to the lever. */
+  ownsLever(object: Object3D): boolean {
+    return this.leverObject !== null && isDescendantOf(object, this.leverObject);
+  }
+
   /** Finds the lever and both drums inside the loaded model. Returns the names it missed. */
   attach(root: Object3D): string[] {
     const missing: string[] = [];
@@ -322,36 +289,3 @@ export class DiceMachine {
   }
 }
 
-/**
- * three's GLTFLoader runs node names through `PropertyBinding.sanitizeNodeName`, which
- * turns every space into an underscore and strips `[ ] . : /`. Normalising both sides
- * lets the config keep using readable fragments like "middle 4".
- */
-function normaliseName(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[[\].:/]/g, '')
-    .replace(/[\s_]+/g, ' ')
-    .trim();
-}
-
-function findNode(root: Object3D, fragment: string): Object3D | null {
-  const needle = normaliseName(fragment);
-  let exact: Object3D | null = null;
-  let partial: Object3D | null = null;
-
-  root.traverse((node) => {
-    if (!node.name) {
-      return;
-    }
-
-    const name = normaliseName(node.name);
-    if (name === needle) {
-      exact ??= node;
-    } else if (name.includes(needle)) {
-      partial ??= node;
-    }
-  });
-
-  return exact ?? partial;
-}

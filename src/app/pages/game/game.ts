@@ -13,6 +13,7 @@ import {
 import { SliderField } from '../../ui/slider-field/slider-field';
 import { DiceRoll, DiceService } from '../../services/dice.service';
 import { DiceMachine } from './dice-machine';
+import { Keypad } from './keypad';
 import { DICE_CONFIG } from './dice.config';
 import {
   CameraMode,
@@ -113,6 +114,7 @@ export class Game implements AfterViewInit, OnDestroy {
   protected readonly dimensions = signal('');
   protected readonly viewport = signal('');
   protected readonly lastRoll = signal<DiceRoll | null>(null);
+  protected readonly lastKey = signal('');
   protected readonly rolling = signal(false);
   protected readonly rigWarning = signal('');
 
@@ -124,8 +126,10 @@ export class Game implements AfterViewInit, OnDestroy {
   private tapCount = 0;
   private tapTimer: ReturnType<typeof setTimeout> | null = null;
   private activePointerId: number | null = null;
+  private activeKey: string | null = null;
 
   private readonly machine = new DiceMachine();
+  private readonly keypad = new Keypad();
   private readonly raycaster = new Raycaster();
   private readonly pointer = new Vector2();
   private activeCamera: PerspectiveCamera | OrthographicCamera | null = null;
@@ -158,6 +162,7 @@ export class Game implements AfterViewInit, OnDestroy {
     window.removeEventListener('pointerup', this.onPointerUp);
     window.removeEventListener('pointercancel', this.onPointerUp);
     this.machine.onSettled = null;
+    this.keypad.onPress = null;
 
     if (this.tapTimer !== null) {
       clearTimeout(this.tapTimer);
@@ -265,6 +270,7 @@ export class Game implements AfterViewInit, OnDestroy {
         this.lastRoll.set(roll);
         this.rolling.set(false);
       });
+    this.keypad.onPress = (id) => this.zone.run(() => this.lastKey.set(id));
 
     this.lastFrameMs = performance.now();
     this.frameHandle = requestAnimationFrame(this.renderFrame);
@@ -277,11 +283,30 @@ export class Game implements AfterViewInit, OnDestroy {
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
-    if (this.activePointerId !== null || !this.machine.ready) {
+    if (this.activePointerId !== null) {
       return;
     }
 
-    if (this.machine.currentState !== 'idle' || !this.hitsLever(event)) {
+    const hit = this.pick(event);
+    if (!hit) {
+      return;
+    }
+
+    // Keys sit proud of the device, so they win a tie against "press anywhere".
+    const keyId = this.keypad.keyAt(hit);
+    if (keyId) {
+      event.preventDefault();
+      this.activePointerId = event.pointerId;
+      this.activeKey = keyId;
+      this.keypad.press(keyId);
+      return;
+    }
+
+    if (!this.machine.ready || this.machine.currentState !== 'idle') {
+      return;
+    }
+
+    if (!this.machine.ownsLever(hit) && !DICE_CONFIG.interaction.pressAnywhere) {
       return;
     }
 
@@ -297,19 +322,23 @@ export class Game implements AfterViewInit, OnDestroy {
     }
 
     this.activePointerId = null;
+
+    if (this.activeKey) {
+      this.keypad.release(this.activeKey);
+      this.activeKey = null;
+      return;
+    }
+
     this.machine.release();
   };
 
-  private hitsLever(event: PointerEvent): boolean {
+  /** Nearest model object under the pointer, or null. */
+  private pick(event: PointerEvent): Object3D | null {
     const camera = this.activeCamera;
-    const targets = DICE_CONFIG.interaction.pressAnywhere
-      ? this.model
-        ? [this.model]
-        : []
-      : this.machine.hitTargets;
+    const model = this.model;
 
-    if (!camera || targets.length === 0) {
-      return false;
+    if (!camera || !model) {
+      return null;
     }
 
     const canvas = this.canvasRef().nativeElement;
@@ -320,7 +349,7 @@ export class Game implements AfterViewInit, OnDestroy {
     );
 
     this.raycaster.setFromCamera(this.pointer, camera);
-    return this.raycaster.intersectObjects(targets, true).length > 0;
+    return this.raycaster.intersectObject(model, true)[0]?.object ?? null;
   }
 
   private loadModel(): void {
@@ -342,10 +371,12 @@ export class Game implements AfterViewInit, OnDestroy {
         this.model = model;
 
         const missing = this.machine.attach(model);
+        const missingKeys = this.keypad.attach(model);
+        const absent = [...missing, ...missingKeys];
 
         this.zone.run(() => {
           this.dimensions.set(`${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}`);
-          this.rigWarning.set(missing.length > 0 ? `Missing nodes: ${missing.join(', ')}` : '');
+          this.rigWarning.set(absent.length > 0 ? `Missing nodes: ${absent.join(', ')}` : '');
           this.status.set('ready');
         });
       },
@@ -375,6 +406,7 @@ export class Game implements AfterViewInit, OnDestroy {
     this.syncSize();
     this.applyDeviceRotation();
     this.machine.update(deltaMs);
+    this.keypad.update(deltaMs);
     this.activeCamera = this.updateCamera();
     renderer.render(this.scene, this.activeCamera);
   };

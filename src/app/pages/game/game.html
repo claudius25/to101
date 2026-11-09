@@ -160,6 +160,16 @@
       }
     </p>
 
+    <h2 class="dev__title">Keypad</h2>
+
+    <p class="dev__meta">
+      @if (lastKey()) {
+        Last key <b>{{ lastKey() }}</b>
+      } @else {
+        Press a key on the device
+      }
+    </p>
+
     <h2 class="dev__title">Save to config</h2>
 
     <p class="dev__hint">Paste into <code>device-view.config.ts</code> to make this the default.</p>
