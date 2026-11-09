@@ -26,6 +26,47 @@ Key files:
 Game screens live under `src/app/pages/` and are lazy-loaded from
 [`src/app/app.routes.ts`](./src/app/app.routes.ts).
 
+## Screens
+
+| Route | Component | Purpose |
+| --- | --- | --- |
+| `/` | [`pages/home`](./src/app/pages/home) | Launcher art (`assets/launcher.png`); tapping it opens the game |
+| `/game` | [`pages/game`](./src/app/pages/game) | three.js view of `assets/aluminium-device-game.glb` |
+
+Binary assets live in `src/assets/` and are served from `/assets/` via the asset mapping in
+[`angular.json`](./angular.json).
+
+## 3D device view
+
+[`pages/game`](./src/app/pages/game/game.ts) renders the device with three.js (`three@0.187`):
+
+- A `PMREMGenerator` + `RoomEnvironment` image-based light, so the brushed aluminium has
+  something to reflect, plus a key and fill `DirectionalLight`.
+- **Tightest possible framing.** Every frame the eight corners of the model's bounding box are
+  projected onto the camera basis and the smallest distance (perspective) or frustum size
+  (orthographic) that still contains all of them is used. The framing therefore stays exact as
+  the camera orbits, the device spins, or the stage is resized.
+- The model is centred at the origin and parented to a pivot `Group`, so both the camera target
+  and the device's own rotation share the same centre.
+- The render loop runs via `NgZone.runOutsideAngular`, and the drawing buffer is reconciled with
+  the canvas CSS box each frame (the stage can be hidden by the landscape lock at any time).
+
+### Dev panel
+
+A collapsible panel is docked to the right edge of the game screen — tap the **DEV** handle.
+
+| Control | Effect |
+| --- | --- |
+| Projection | Switches between perspective and orthographic cameras |
+| Field of view | Perspective only (10°–90°) |
+| Azimuth / Elevation / Roll | Orbits the camera around the device, always targeting its centre |
+| Fit margin | `1.00×` is the tightest fit; raise it to add breathing room |
+| Auto-rotate azimuth | Continuously spins the camera around the device |
+| Pitch · X / Yaw · Y / Roll · Z | Rotates the device itself about its own centre |
+| Reset view | Restores every control to its default |
+
+The panel also reports the model's bounding-box size and the live canvas resolution.
+
 ## Development server
 
 To start a local development server, run:

@@ -10,11 +10,11 @@ import {
   viewChild,
 } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
-import { RouterLink } from '@angular/router';
 import {
   ACESFilmicToneMapping,
   Box3,
   DirectionalLight,
+  Group,
   MathUtils,
   Mesh,
   Object3D,
@@ -51,7 +51,7 @@ function boxCorners(box: Box3): Vector3[] {
 
 @Component({
   selector: 'app-game',
-  imports: [RouterLink, DecimalPipe],
+  imports: [DecimalPipe],
   templateUrl: './game.html',
   styleUrl: './game.scss',
 })
@@ -59,12 +59,15 @@ export class Game implements AfterViewInit, OnDestroy {
   private readonly zone = inject(NgZone);
   private readonly canvasRef = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
 
-  protected readonly cameraMode = signal<CameraMode>('perspective');
+  protected readonly cameraMode = signal<CameraMode>('orthographic');
   protected readonly azimuth = signal(0);
-  protected readonly elevation = signal(20);
+  protected readonly elevation = signal(80);
   protected readonly roll = signal(0);
   protected readonly fov = signal(35);
   protected readonly margin = signal(1);
+  protected readonly deviceX = signal(0);
+  protected readonly deviceY = signal(0);
+  protected readonly deviceZ = signal(0);
   protected readonly autoRotate = signal(false);
   protected readonly panelOpen = signal(false);
   protected readonly status = signal<Status>('loading');
@@ -78,10 +81,13 @@ export class Game implements AfterViewInit, OnDestroy {
   private frameHandle = 0;
 
   private readonly scene = new Scene();
+  /** Rotating this instead of the model keeps the pivot on the device's centre. */
+  private readonly pivot = new Group();
   private readonly perspectiveCamera = new PerspectiveCamera(35, 1, 0.01, 100);
   private readonly orthographicCamera = new OrthographicCamera(-1, 1, 1, -1, 0.01, 100);
 
-  private corners: Vector3[] = [];
+  private localCorners: Vector3[] = [];
+  private worldCorners: Vector3[] = [];
   private radius = 1;
 
   private readonly direction = new Vector3();
@@ -98,10 +104,12 @@ export class Game implements AfterViewInit, OnDestroy {
     cancelAnimationFrame(this.frameHandle);
 
     if (this.model) {
-      this.scene.remove(this.model);
+      this.pivot.remove(this.model);
       this.disposeObject(this.model);
       this.model = null;
     }
+
+    this.scene.remove(this.pivot);
 
     this.environment?.dispose();
     this.environment = null;
@@ -125,6 +133,9 @@ export class Game implements AfterViewInit, OnDestroy {
     this.roll.set(0);
     this.fov.set(35);
     this.margin.set(1);
+    this.deviceX.set(0);
+    this.deviceY.set(0);
+    this.deviceZ.set(0);
     this.autoRotate.set(false);
   }
 
@@ -171,16 +182,16 @@ export class Game implements AfterViewInit, OnDestroy {
 
         const centered = new Box3().setFromObject(model);
         const size = centered.getSize(new Vector3());
-        this.corners = boxCorners(centered);
+        this.localCorners = boxCorners(centered);
+        this.worldCorners = this.localCorners.map((corner) => corner.clone());
         this.radius = centered.getBoundingSphere(new Sphere()).radius || 1;
 
-        this.scene.add(model);
+        this.pivot.add(model);
+        this.scene.add(this.pivot);
         this.model = model;
 
         this.zone.run(() => {
-          this.dimensions.set(
-            `${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}`,
-          );
+          this.dimensions.set(`${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}`);
           this.status.set('ready');
         });
       },
@@ -203,8 +214,23 @@ export class Game implements AfterViewInit, OnDestroy {
     }
 
     this.syncSize();
+    this.applyDeviceRotation();
     renderer.render(this.scene, this.updateCamera());
   };
+
+  /** Spins the device itself and re-projects its corners so the fit stays tight. */
+  private applyDeviceRotation(): void {
+    const rotation = this.pivot.rotation;
+    rotation.set(
+      MathUtils.degToRad(this.deviceX()),
+      MathUtils.degToRad(this.deviceY()),
+      MathUtils.degToRad(this.deviceZ()),
+    );
+
+    for (let index = 0; index < this.localCorners.length; index++) {
+      this.worldCorners[index].copy(this.localCorners[index]).applyEuler(rotation);
+    }
+  }
 
   /**
    * The stage can be hidden (landscape lock) or resized at any time, so the drawing
@@ -248,11 +274,7 @@ export class Game implements AfterViewInit, OnDestroy {
     const cosElevation = Math.cos(elevation);
 
     this.direction
-      .set(
-        Math.sin(azimuth) * cosElevation,
-        Math.sin(elevation),
-        Math.cos(azimuth) * cosElevation,
-      )
+      .set(Math.sin(azimuth) * cosElevation, Math.sin(elevation), Math.cos(azimuth) * cosElevation)
       .normalize();
 
     this.axisZ.copy(this.direction);
@@ -275,7 +297,7 @@ export class Game implements AfterViewInit, OnDestroy {
 
     // Smallest distance at which every bounding-box corner still sits inside the frustum.
     let distance = 0;
-    for (const corner of this.corners) {
+    for (const corner of this.worldCorners) {
       const x = Math.abs(corner.dot(this.axisX));
       const y = Math.abs(corner.dot(this.axisY));
       const z = corner.dot(this.axisZ);
@@ -297,7 +319,7 @@ export class Game implements AfterViewInit, OnDestroy {
 
     let halfWidth = 1e-4;
     let halfHeight = 1e-4;
-    for (const corner of this.corners) {
+    for (const corner of this.worldCorners) {
       halfWidth = Math.max(halfWidth, Math.abs(corner.dot(this.axisX)));
       halfHeight = Math.max(halfHeight, Math.abs(corner.dot(this.axisY)));
     }
