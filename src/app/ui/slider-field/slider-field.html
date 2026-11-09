@@ -1,0 +1,37 @@
+<span class="field__label">
+  {{ label() }}
+  <b>{{ display() }}</b>
+</span>
+
+<div class="field__row">
+  <button
+    type="button"
+    class="field__step"
+    [disabled]="atMin()"
+    [attr.aria-label]="'Decrease ' + label()"
+    (click)="nudge(-1)"
+  >
+    −
+  </button>
+
+  <input
+    type="range"
+    class="field__range"
+    [min]="min()"
+    [max]="max()"
+    [step]="step()"
+    [value]="value()"
+    [attr.aria-label]="label()"
+    (input)="onInput($event)"
+  />
+
+  <button
+    type="button"
+    class="field__step"
+    [disabled]="atMax()"
+    [attr.aria-label]="'Increase ' + label()"
+    (click)="nudge(1)"
+  >
+    +
+  </button>
+</div>

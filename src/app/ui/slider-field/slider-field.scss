@@ -1,0 +1,53 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.field__label {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--app-muted);
+}
+
+.field__label b {
+  color: var(--app-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.field__row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.field__range {
+  flex: 1;
+  min-width: 0;
+  height: 1.75rem;
+  accent-color: var(--app-accent);
+}
+
+.field__step {
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 0.5rem;
+  background: rgb(255 255 255 / 6%);
+  color: var(--app-fg);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.field__step:active:not(:disabled) {
+  background: var(--app-accent);
+  border-color: var(--app-accent);
+}
+
+.field__step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}

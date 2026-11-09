@@ -48,76 +48,56 @@
     </div>
 
     @if (cameraMode() === 'perspective') {
-      <label class="dev__field">
-        <span class="dev__label"
-          >Field of view <b>{{ fov() }}°</b></span
-        >
-        <input
-          type="range"
-          min="10"
-          max="90"
-          step="1"
-          [value]="fov()"
-          (input)="onRange(fov, $event)"
-        />
-      </label>
+      <app-slider-field
+        label="Field of view"
+        suffix="°"
+        [min]="ranges.fov.min"
+        [max]="ranges.fov.max"
+        [step]="ranges.fov.step"
+        [decimals]="ranges.fov.decimals"
+        [(value)]="fov"
+      />
     }
 
-    <label class="dev__field">
-      <span class="dev__label"
-        >Azimuth <b>{{ azimuth() | number: '1.0-0' }}°</b></span
-      >
-      <input
-        type="range"
-        min="-180"
-        max="180"
-        step="1"
-        [value]="azimuth()"
-        (input)="onRange(azimuth, $event)"
-      />
-    </label>
+    <app-slider-field
+      label="Azimuth"
+      suffix="°"
+      [min]="ranges.azimuth.min"
+      [max]="ranges.azimuth.max"
+      [step]="ranges.azimuth.step"
+      [decimals]="ranges.azimuth.decimals"
+      [(value)]="azimuth"
+    />
 
-    <label class="dev__field">
-      <span class="dev__label"
-        >Elevation <b>{{ elevation() }}°</b></span
-      >
-      <input
-        type="range"
-        min="-89"
-        max="89"
-        step="1"
-        [value]="elevation()"
-        (input)="onRange(elevation, $event)"
-      />
-    </label>
+    <app-slider-field
+      label="Elevation"
+      suffix="°"
+      [min]="ranges.elevation.min"
+      [max]="ranges.elevation.max"
+      [step]="ranges.elevation.step"
+      [decimals]="ranges.elevation.decimals"
+      [(value)]="elevation"
+    />
 
-    <label class="dev__field">
-      <span class="dev__label"
-        >Roll <b>{{ roll() }}°</b></span
-      >
-      <input
-        type="range"
-        min="-180"
-        max="180"
-        step="1"
-        [value]="roll()"
-        (input)="onRange(roll, $event)"
-      />
-    </label>
+    <app-slider-field
+      label="Roll"
+      suffix="°"
+      [min]="ranges.roll.min"
+      [max]="ranges.roll.max"
+      [step]="ranges.roll.step"
+      [decimals]="ranges.roll.decimals"
+      [(value)]="roll"
+    />
 
-    <label class="dev__field">
-      <span class="dev__label"
-        >Fit margin <b>{{ margin() | number: '1.2-2' }}×</b></span
-      >
-      <input
-        type="range"
-        min="1"
-        max="2"
-        step="0.01"
-        [value]="margin()"
-        (input)="onRange(margin, $event)"
-      />
-    </label>
+    <app-slider-field
+      label="Fit margin"
+      suffix="×"
+      [min]="ranges.margin.min"
+      [max]="ranges.margin.max"
+      [step]="ranges.margin.step"
+      [decimals]="ranges.margin.decimals"
+      [(value)]="margin"
+    />
 
     <label class="dev__check">
       <input type="checkbox" [checked]="autoRotate()" (change)="onToggle(autoRotate, $event)" />
@@ -126,43 +106,58 @@
 
     <h2 class="dev__title">Device rotation</h2>
 
-    <label class="dev__field">
-      <span class="dev__label">Pitch · X <b>{{ deviceX() }}°</b></span>
-      <input
-        type="range"
-        min="-180"
-        max="180"
-        step="1"
-        [value]="deviceX()"
-        (input)="onRange(deviceX, $event)"
-      />
-    </label>
+    <app-slider-field
+      label="Pitch · X"
+      suffix="°"
+      [min]="ranges.deviceRotation.min"
+      [max]="ranges.deviceRotation.max"
+      [step]="ranges.deviceRotation.step"
+      [decimals]="ranges.deviceRotation.decimals"
+      [(value)]="deviceX"
+    />
 
-    <label class="dev__field">
-      <span class="dev__label">Yaw · Y <b>{{ deviceY() }}°</b></span>
-      <input
-        type="range"
-        min="-180"
-        max="180"
-        step="1"
-        [value]="deviceY()"
-        (input)="onRange(deviceY, $event)"
-      />
-    </label>
+    <app-slider-field
+      label="Yaw · Y"
+      suffix="°"
+      [min]="ranges.deviceRotation.min"
+      [max]="ranges.deviceRotation.max"
+      [step]="ranges.deviceRotation.step"
+      [decimals]="ranges.deviceRotation.decimals"
+      [(value)]="deviceY"
+    />
 
-    <label class="dev__field">
-      <span class="dev__label">Roll · Z <b>{{ deviceZ() }}°</b></span>
-      <input
-        type="range"
-        min="-180"
-        max="180"
-        step="1"
-        [value]="deviceZ()"
-        (input)="onRange(deviceZ, $event)"
-      />
-    </label>
+    <app-slider-field
+      label="Roll · Z"
+      suffix="°"
+      [min]="ranges.deviceRotation.min"
+      [max]="ranges.deviceRotation.max"
+      [step]="ranges.deviceRotation.step"
+      [decimals]="ranges.deviceRotation.decimals"
+      [(value)]="deviceZ"
+    />
 
-    <button type="button" class="dev__reset" (click)="reset()">Reset view</button>
+    <h2 class="dev__title">Save to config</h2>
+
+    <p class="dev__hint">Paste into <code>device-view.config.ts</code> to make this the default.</p>
+
+    <pre class="dev__code">{{ snippet() }}</pre>
+
+    <div class="dev__actions">
+      <button type="button" class="dev__button" (click)="copySettings()">
+        @switch (copyState()) {
+          @case ('copied') {
+            Copied
+          }
+          @case ('failed') {
+            Copy failed — select above
+          }
+          @default {
+            Copy settings
+          }
+        }
+      </button>
+      <button type="button" class="dev__button" (click)="reset()">Reset</button>
+    </div>
 
     @if (dimensions()) {
       <p class="dev__meta">Model size {{ dimensions() }}</p>

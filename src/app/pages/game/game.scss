@@ -164,12 +164,52 @@
   cursor: pointer;
 }
 
+.dev__hint {
+  margin: 0;
+  color: var(--app-muted);
+  font-size: 0.7rem;
+}
+
+.dev__hint code {
+  color: var(--app-fg);
+}
+
+.dev__code {
+  margin: 0;
+  max-height: 9rem;
+  overflow: auto;
+  padding: 0.5rem;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 0.4rem;
+  background: rgb(0 0 0 / 35%);
+  font-size: 0.65rem;
+  line-height: 1.35;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.dev__actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.dev__button {
+  flex: 1;
+  padding: 0.5rem 0.25rem;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 0.4rem;
+  background: rgb(255 255 255 / 6%);
+  color: var(--app-fg);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.dev__button:active {
+  background: var(--app-accent);
+  border-color: var(--app-accent);
+}
+
 .dev__meta {
   margin: 0;
   color: var(--app-muted);
-}
-
-input[type='range'] {
-  width: 100%;
-  accent-color: var(--app-accent);
 }

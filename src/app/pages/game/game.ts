@@ -5,11 +5,18 @@ import {
   NgZone,
   OnDestroy,
   WritableSignal,
+  computed,
   inject,
   signal,
   viewChild,
 } from '@angular/core';
-import { DecimalPipe } from '@angular/common';
+import { SliderField } from '../../ui/slider-field/slider-field';
+import {
+  CameraMode,
+  DEVICE_VIEW_CONFIG,
+  DEVICE_VIEW_RANGES,
+  DeviceViewConfig,
+} from './device-view.config';
 import {
   ACESFilmicToneMapping,
   Box3,
@@ -34,8 +41,8 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 const MODEL_URL = 'assets/aluminium-device-game.glb';
 const ELEVATION_LIMIT = 89;
 
-type CameraMode = 'perspective' | 'orthographic';
 type Status = 'loading' | 'ready' | 'error';
+type CopyState = 'idle' | 'copied' | 'failed';
 
 function boxCorners(box: Box3): Vector3[] {
   const corners: Vector3[] = [];
@@ -51,7 +58,7 @@ function boxCorners(box: Box3): Vector3[] {
 
 @Component({
   selector: 'app-game',
-  imports: [DecimalPipe],
+  imports: [SliderField],
   templateUrl: './game.html',
   styleUrl: './game.scss',
 })
@@ -59,18 +66,41 @@ export class Game implements AfterViewInit, OnDestroy {
   private readonly zone = inject(NgZone);
   private readonly canvasRef = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
 
-  protected readonly cameraMode = signal<CameraMode>('orthographic');
-  protected readonly azimuth = signal(0);
-  protected readonly elevation = signal(80);
-  protected readonly roll = signal(0);
-  protected readonly fov = signal(35);
-  protected readonly margin = signal(1);
-  protected readonly deviceX = signal(0);
-  protected readonly deviceY = signal(0);
-  protected readonly deviceZ = signal(0);
-  protected readonly autoRotate = signal(false);
+  protected readonly ranges = DEVICE_VIEW_RANGES;
+
+  protected readonly cameraMode = signal<CameraMode>(DEVICE_VIEW_CONFIG.camera.mode);
+  protected readonly azimuth = signal(DEVICE_VIEW_CONFIG.camera.azimuth);
+  protected readonly elevation = signal(DEVICE_VIEW_CONFIG.camera.elevation);
+  protected readonly roll = signal(DEVICE_VIEW_CONFIG.camera.roll);
+  protected readonly fov = signal(DEVICE_VIEW_CONFIG.camera.fov);
+  protected readonly margin = signal(DEVICE_VIEW_CONFIG.camera.margin);
+  protected readonly deviceX = signal(DEVICE_VIEW_CONFIG.device.pitch);
+  protected readonly deviceY = signal(DEVICE_VIEW_CONFIG.device.yaw);
+  protected readonly deviceZ = signal(DEVICE_VIEW_CONFIG.device.roll);
+  protected readonly autoRotate = signal(DEVICE_VIEW_CONFIG.camera.autoRotate);
   protected readonly panelOpen = signal(false);
   protected readonly status = signal<Status>('loading');
+  protected readonly copyState = signal<CopyState>('idle');
+
+  /** Live view of the panel values, shaped exactly like device-view.config.ts. */
+  protected readonly settings = computed<DeviceViewConfig>(() => ({
+    camera: {
+      mode: this.cameraMode(),
+      fov: this.fov(),
+      azimuth: Math.round(this.azimuth()),
+      elevation: this.elevation(),
+      roll: this.roll(),
+      margin: this.margin(),
+      autoRotate: this.autoRotate(),
+    },
+    device: {
+      pitch: this.deviceX(),
+      yaw: this.deviceY(),
+      roll: this.deviceZ(),
+    },
+  }));
+
+  protected readonly snippet = computed(() => JSON.stringify(this.settings(), null, 2));
   protected readonly errorMessage = signal('');
   protected readonly dimensions = signal('');
   protected readonly viewport = signal('');
@@ -118,25 +148,34 @@ export class Game implements AfterViewInit, OnDestroy {
     this.renderer = null;
   }
 
-  protected onRange(target: WritableSignal<number>, event: Event): void {
-    target.set(Number((event.target as HTMLInputElement).value));
-  }
-
   protected onToggle(target: WritableSignal<boolean>, event: Event): void {
     target.set((event.target as HTMLInputElement).checked);
   }
 
+  /** Restores whatever is currently committed to device-view.config.ts. */
   protected reset(): void {
-    this.cameraMode.set('perspective');
-    this.azimuth.set(0);
-    this.elevation.set(20);
-    this.roll.set(0);
-    this.fov.set(35);
-    this.margin.set(1);
-    this.deviceX.set(0);
-    this.deviceY.set(0);
-    this.deviceZ.set(0);
-    this.autoRotate.set(false);
+    const { camera, device } = DEVICE_VIEW_CONFIG;
+    this.cameraMode.set(camera.mode);
+    this.azimuth.set(camera.azimuth);
+    this.elevation.set(camera.elevation);
+    this.roll.set(camera.roll);
+    this.fov.set(camera.fov);
+    this.margin.set(camera.margin);
+    this.autoRotate.set(camera.autoRotate);
+    this.deviceX.set(device.pitch);
+    this.deviceY.set(device.yaw);
+    this.deviceZ.set(device.roll);
+  }
+
+  protected async copySettings(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(this.snippet());
+      this.copyState.set('copied');
+    } catch {
+      this.copyState.set('failed');
+    }
+
+    setTimeout(() => this.copyState.set('idle'), 2000);
   }
 
   private init(): void {
