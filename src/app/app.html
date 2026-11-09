@@ -1,0 +1,17 @@
+<!-- Portrait play area. On desktop it is letterboxed to a phone-like aspect ratio. -->
+<div class="app-frame">
+  <main class="app-shell">
+    <router-outlet />
+  </main>
+</div>
+
+<!-- Replaces the game whenever a handheld device is held in landscape. -->
+<div class="rotate-device" role="alert" aria-live="assertive">
+  <svg class="rotate-device__icon" viewBox="0 0 24 24" aria-hidden="true">
+    <rect x="7" y="2" width="10" height="20" rx="2" />
+    <path d="M3.5 13.5a8.5 8.5 0 0 0 3 5.5" />
+    <path d="M20.5 13.5a8.5 8.5 0 0 1-3 5.5" />
+  </svg>
+  <h1 class="rotate-device__title">Rotate your device</h1>
+  <p class="rotate-device__text">{{ title() }} is built for portrait mode only.</p>
+</div>

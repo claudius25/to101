@@ -1,0 +1,102 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+.app-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  background: radial-gradient(circle at 50% 0%, #22244a 0%, var(--app-bg) 70%);
+}
+
+.app-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  padding:
+    calc(var(--safe-top) + 0.75rem)
+    calc(var(--safe-right) + 1rem)
+    calc(var(--safe-bottom) + 0.75rem)
+    calc(var(--safe-left) + 1rem);
+}
+
+/* Wide desktop windows: letterbox the game into a phone-shaped portrait frame. */
+@media (min-width: 640px) and (min-aspect-ratio: 3 / 4) {
+  .app-shell {
+    width: auto;
+    height: min(100%, 960px);
+    aspect-ratio: 9 / 16;
+    max-width: 100%;
+    border-radius: 1.75rem;
+    background: var(--app-bg);
+    box-shadow: 0 1.5rem 3rem rgb(0 0 0 / 55%);
+  }
+}
+
+.rotate-device {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1.5rem;
+  text-align: center;
+  background: var(--app-bg);
+}
+
+.rotate-device__icon {
+  width: 4.5rem;
+  height: 4.5rem;
+  fill: none;
+  stroke: var(--app-accent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: rotate-hint 2.4s ease-in-out infinite;
+}
+
+.rotate-device__title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+}
+
+.rotate-device__text {
+  margin: 0;
+  color: var(--app-muted);
+  font-size: 0.95rem;
+}
+
+/* Handheld landscape (or any short landscape window): block play entirely. */
+@media (orientation: landscape) and (pointer: coarse),
+  (orientation: landscape) and (max-height: 520px) {
+  .app-frame {
+    display: none;
+  }
+
+  .rotate-device {
+    display: flex;
+  }
+}
+
+@keyframes rotate-hint {
+  0%,
+  45% {
+    transform: rotate(0deg);
+  }
+  60%,
+  90% {
+    transform: rotate(-90deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
