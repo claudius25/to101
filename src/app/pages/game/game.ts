@@ -11,6 +11,9 @@ import {
   viewChild,
 } from '@angular/core';
 import { SliderField } from '../../ui/slider-field/slider-field';
+import { DiceRoll, DiceService } from '../../services/dice.service';
+import { DiceMachine } from './dice-machine';
+import { DICE_CONFIG } from './dice.config';
 import {
   CameraMode,
   DEVICE_VIEW_CONFIG,
@@ -28,10 +31,12 @@ import {
   OrthographicCamera,
   PMREMGenerator,
   PerspectiveCamera,
+  Raycaster,
   SRGBColorSpace,
   Scene,
   Sphere,
   Texture,
+  Vector2,
   Vector3,
   WebGLRenderer,
 } from 'three';
@@ -66,6 +71,7 @@ function boxCorners(box: Box3): Vector3[] {
 })
 export class Game implements AfterViewInit, OnDestroy {
   private readonly zone = inject(NgZone);
+  private readonly dice = inject(DiceService);
   private readonly canvasRef = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
 
   protected readonly ranges = DEVICE_VIEW_RANGES;
@@ -106,13 +112,23 @@ export class Game implements AfterViewInit, OnDestroy {
   protected readonly errorMessage = signal('');
   protected readonly dimensions = signal('');
   protected readonly viewport = signal('');
+  protected readonly lastRoll = signal<DiceRoll | null>(null);
+  protected readonly rolling = signal(false);
+  protected readonly rigWarning = signal('');
 
   private renderer: WebGLRenderer | null = null;
   private environment: Texture | null = null;
   private model: Object3D | null = null;
   private frameHandle = 0;
+  private lastFrameMs = 0;
   private tapCount = 0;
   private tapTimer: ReturnType<typeof setTimeout> | null = null;
+  private activePointerId: number | null = null;
+
+  private readonly machine = new DiceMachine();
+  private readonly raycaster = new Raycaster();
+  private readonly pointer = new Vector2();
+  private activeCamera: PerspectiveCamera | OrthographicCamera | null = null;
 
   private readonly scene = new Scene();
   /** Rotating this instead of the model keeps the pivot on the device's centre. */
@@ -136,6 +152,12 @@ export class Game implements AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     cancelAnimationFrame(this.frameHandle);
+
+    const canvas = this.canvasRef().nativeElement;
+    canvas.removeEventListener('pointerdown', this.onPointerDown);
+    window.removeEventListener('pointerup', this.onPointerUp);
+    window.removeEventListener('pointercancel', this.onPointerUp);
+    this.machine.onSettled = null;
 
     if (this.tapTimer !== null) {
       clearTimeout(this.tapTimer);
@@ -237,7 +259,68 @@ export class Game implements AfterViewInit, OnDestroy {
     this.scene.add(key, fill);
 
     this.loadModel();
+    this.bindPointer(canvas);
+    this.machine.onSettled = (roll) =>
+      this.zone.run(() => {
+        this.lastRoll.set(roll);
+        this.rolling.set(false);
+      });
+
+    this.lastFrameMs = performance.now();
     this.frameHandle = requestAnimationFrame(this.renderFrame);
+  }
+
+  private bindPointer(canvas: HTMLCanvasElement): void {
+    canvas.addEventListener('pointerdown', this.onPointerDown);
+    window.addEventListener('pointerup', this.onPointerUp);
+    window.addEventListener('pointercancel', this.onPointerUp);
+  }
+
+  private readonly onPointerDown = (event: PointerEvent): void => {
+    if (this.activePointerId !== null || !this.machine.ready) {
+      return;
+    }
+
+    if (this.machine.currentState !== 'idle' || !this.hitsLever(event)) {
+      return;
+    }
+
+    event.preventDefault();
+    this.activePointerId = event.pointerId;
+    this.machine.press(this.dice.roll());
+    this.zone.run(() => this.rolling.set(true));
+  };
+
+  private readonly onPointerUp = (event: PointerEvent): void => {
+    if (this.activePointerId !== event.pointerId) {
+      return;
+    }
+
+    this.activePointerId = null;
+    this.machine.release();
+  };
+
+  private hitsLever(event: PointerEvent): boolean {
+    const camera = this.activeCamera;
+    const targets = DICE_CONFIG.interaction.pressAnywhere
+      ? this.model
+        ? [this.model]
+        : []
+      : this.machine.hitTargets;
+
+    if (!camera || targets.length === 0) {
+      return false;
+    }
+
+    const canvas = this.canvasRef().nativeElement;
+    const bounds = canvas.getBoundingClientRect();
+    this.pointer.set(
+      ((event.clientX - bounds.left) / bounds.width) * 2 - 1,
+      -((event.clientY - bounds.top) / bounds.height) * 2 + 1,
+    );
+
+    this.raycaster.setFromCamera(this.pointer, camera);
+    return this.raycaster.intersectObjects(targets, true).length > 0;
   }
 
   private loadModel(): void {
@@ -258,8 +341,11 @@ export class Game implements AfterViewInit, OnDestroy {
         this.scene.add(this.pivot);
         this.model = model;
 
+        const missing = this.machine.attach(model);
+
         this.zone.run(() => {
           this.dimensions.set(`${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}`);
+          this.rigWarning.set(missing.length > 0 ? `Missing nodes: ${missing.join(', ')}` : '');
           this.status.set('ready');
         });
       },
@@ -276,6 +362,11 @@ export class Game implements AfterViewInit, OnDestroy {
       return;
     }
 
+    const now = performance.now();
+    // Clamp so a backgrounded tab does not resume with one enormous step.
+    const deltaMs = Math.min(now - this.lastFrameMs, 100);
+    this.lastFrameMs = now;
+
     if (this.autoRotate()) {
       const next = this.azimuth() + 0.3;
       this.azimuth.set(next > 180 ? next - 360 : next);
@@ -283,7 +374,9 @@ export class Game implements AfterViewInit, OnDestroy {
 
     this.syncSize();
     this.applyDeviceRotation();
-    renderer.render(this.scene, this.updateCamera());
+    this.machine.update(deltaMs);
+    this.activeCamera = this.updateCamera();
+    renderer.render(this.scene, this.activeCamera);
   };
 
   /** Spins the device itself and re-projects its corners so the fit stays tight. */

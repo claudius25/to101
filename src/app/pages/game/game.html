@@ -10,6 +10,9 @@
     @if (status() === 'error') {
       <p class="game__status game__status--error">{{ errorMessage() }}</p>
     }
+    @if (rigWarning()) {
+      <p class="game__status game__status--error">{{ rigWarning() }}</p>
+    }
   </div>
 </section>
 
@@ -140,6 +143,22 @@
       [decimals]="ranges.deviceRotation.decimals"
       [(value)]="deviceZ"
     />
+
+    <h2 class="dev__title">Dice</h2>
+
+    @if (rigWarning()) {
+      <p class="dev__hint dev__hint--warn">{{ rigWarning() }}</p>
+    }
+
+    <p class="dev__meta">
+      @if (rolling()) {
+        Rolling…
+      } @else if (lastRoll(); as roll) {
+        Total <b>{{ roll.total }}</b> ({{ roll.wheelOne }} + {{ roll.wheelTwo }})
+      } @else {
+        Pull the orange lever on the device
+      }
+    </p>
 
     <h2 class="dev__title">Save to config</h2>
 

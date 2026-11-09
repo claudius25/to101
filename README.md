@@ -33,6 +33,9 @@ Game screens live under `src/app/pages/` and are lazy-loaded from
 | `/` | [`pages/home`](./src/app/pages/home) | Launcher art (`assets/launcher.png`); tapping it opens the game |
 | `/game` | [`pages/game`](./src/app/pages/game) | three.js view of `assets/aluminium-device-game.glb` |
 
+The dev panel is hidden by default. **Tap the top-left corner of the screen three times** in
+quick succession to toggle it.
+
 Binary assets live in `src/assets/` and are served from `/assets/` via the asset mapping in
 [`angular.json`](./angular.json).
 
@@ -66,6 +69,56 @@ A collapsible panel is docked to the right edge of the game screen — tap the *
 | Reset view | Restores every control to its default |
 
 The panel also reports the model's bounding-box size and the live canvas resolution.
+
+## Rolling the dice
+
+Press and hold the orange **ROLL THE DICE** fin on the device. The lever swings towards you,
+both drums spin up, and when you let go they slow to a stop on the rolled number.
+
+- [`dice.service.ts`](./src/app/services/dice.service.ts) picks the result. With the default
+  `uniform-total` distribution every total from 1 to 12 is equally likely; it then chooses a
+  facet pair that adds up to it. `uniform-faces` instead rolls the two drums independently,
+  which gives the usual triangular distribution.
+- [`dice-machine.ts`](./src/app/pages/game/dice-machine.ts) animates the rig. It finds the
+  lever and drums by name, tweens the lever, ramps each drum up to speed, and on release picks
+  the nearest resting angle that is still at least `settleMinTurns` further along, so a drum
+  never snaps backwards into place.
+- [`game.ts`](./src/app/pages/game/game.ts) raycasts pointer events against the lever and feeds
+  the machine frame deltas.
+
+### Wheel geometry
+
+Both drums spin about their local Y axis. The readable facet is the one pointing up, which is
+local `phi = -90°`. Measured from the GLB:
+
+| Drum | Node | Facets | Spacing | Values |
+| --- | --- | --- | --- | --- |
+| One | `Button • middle 2 • …` | 7 (one blank) | 51.43° | 0–6 |
+| Two | `Button • middle 3 • 21.25 mm` | 6 | 60° | 1–6 |
+
+Hence totals of 1–12. The `offsetDeg` values in the config are derived from those measurements,
+so the correct face is already upright — change them only if the model is re-exported.
+
+> **Node names.** three's `GLTFLoader` passes every node name through
+> `PropertyBinding.sanitizeNodeName`, which turns spaces into underscores and strips
+> `[ ] . : /`. So `Button • middle 3 • 21.25 mm` arrives as `Button_•_middle_3_•_2125_mm`.
+> `dice-machine.ts` normalises both sides before matching, which is why the config can keep
+> using readable fragments like `middle 3`. If a node can't be found, the game screen shows a
+> `Missing nodes: …` message.
+
+### Tuning
+
+[`dice.config.ts`](./src/app/pages/game/dice.config.ts) holds every knob: lever axis, pull angle
+and offset, press/release durations and easings, per-drum spin speed, spin-up time, stop stagger,
+stop duration, minimum turns, easing, spin and face direction, facet count, rest value, the roll
+range and distribution, plus the minimum spin time, an auto-release timeout, and a
+`pressAnywhere` flag that lets you grab the lever by tapping anywhere on the device.
+
+Available easings: `linear`, `easeOutQuad`, `easeOutCubic`, `easeOutQuint`, `easeInOutCubic`,
+`easeOutBack`, `easeOutElastic`.
+
+The dev panel's **Dice** section shows the last result as `total (wheelOne + wheelTwo)` and warns
+if any rig node could not be found in the model.
 
 ## Development server
 
