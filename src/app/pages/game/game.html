@@ -1,0 +1,122 @@
+<section class="game">
+  <header class="game__bar">
+    <a class="game__back" routerLink="/">‹ Menu</a>
+    <span class="game__name">aluminium-device</span>
+  </header>
+
+  <div class="game__stage">
+    <canvas #canvas class="game__canvas"></canvas>
+
+    @if (status() === 'loading') {
+      <p class="game__status">Loading device…</p>
+    }
+    @if (status() === 'error') {
+      <p class="game__status game__status--error">{{ errorMessage() }}</p>
+    }
+  </div>
+</section>
+
+<aside class="dev" [class.dev--open]="panelOpen()">
+  <button
+    type="button"
+    class="dev__handle"
+    [attr.aria-expanded]="panelOpen()"
+    [attr.aria-label]="panelOpen() ? 'Hide dev panel' : 'Show dev panel'"
+    (click)="panelOpen.set(!panelOpen())"
+  >
+    {{ panelOpen() ? '›' : 'DEV' }}
+  </button>
+
+  <div class="dev__body">
+    <h2 class="dev__title">Dev panel</h2>
+
+    <div class="dev__field">
+      <span class="dev__label">Camera</span>
+      <div class="dev__seg">
+        <button
+          type="button"
+          [class.is-active]="cameraMode() === 'perspective'"
+          (click)="cameraMode.set('perspective')"
+        >
+          Perspective
+        </button>
+        <button
+          type="button"
+          [class.is-active]="cameraMode() === 'orthographic'"
+          (click)="cameraMode.set('orthographic')"
+        >
+          Orthographic
+        </button>
+      </div>
+    </div>
+
+    @if (cameraMode() === 'perspective') {
+      <label class="dev__field">
+        <span class="dev__label">Field of view <b>{{ fov() }}°</b></span>
+        <input type="range" min="10" max="90" step="1" [value]="fov()" (input)="onRange(fov, $event)" />
+      </label>
+    }
+
+    <label class="dev__field">
+      <span class="dev__label">Azimuth <b>{{ azimuth() | number: '1.0-0' }}°</b></span>
+      <input
+        type="range"
+        min="-180"
+        max="180"
+        step="1"
+        [value]="azimuth()"
+        (input)="onRange(azimuth, $event)"
+      />
+    </label>
+
+    <label class="dev__field">
+      <span class="dev__label">Elevation <b>{{ elevation() }}°</b></span>
+      <input
+        type="range"
+        min="-89"
+        max="89"
+        step="1"
+        [value]="elevation()"
+        (input)="onRange(elevation, $event)"
+      />
+    </label>
+
+    <label class="dev__field">
+      <span class="dev__label">Roll <b>{{ roll() }}°</b></span>
+      <input
+        type="range"
+        min="-180"
+        max="180"
+        step="1"
+        [value]="roll()"
+        (input)="onRange(roll, $event)"
+      />
+    </label>
+
+    <label class="dev__field">
+      <span class="dev__label">Fit margin <b>{{ margin() | number: '1.2-2' }}×</b></span>
+      <input
+        type="range"
+        min="1"
+        max="2"
+        step="0.01"
+        [value]="margin()"
+        (input)="onRange(margin, $event)"
+      />
+    </label>
+
+    <label class="dev__check">
+      <input type="checkbox" [checked]="autoRotate()" (change)="onToggle(autoRotate, $event)" />
+      Auto-rotate azimuth
+    </label>
+
+    <button type="button" class="dev__reset" (click)="reset()">Reset view</button>
+
+    @if (dimensions()) {
+      <p class="dev__meta">Model size {{ dimensions() }}</p>
+    }
+    @if (viewport()) {
+      <p class="dev__meta">Canvas {{ viewport() }}</p>
+    }
+  </div>
+</aside>

@@ -1,0 +1,169 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+.game {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 0.5rem;
+}
+
+.game__bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.game__back {
+  color: var(--app-fg);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.game__name {
+  color: var(--app-muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.05em;
+}
+
+.game__stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  border-radius: 1rem;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 35%, #2b2e55 0%, #0b0c1c 75%);
+}
+
+.game__canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.game__status {
+  position: absolute;
+  inset: auto 0 1rem;
+  margin: 0;
+  text-align: center;
+  color: var(--app-muted);
+  font-size: 0.85rem;
+}
+
+.game__status--error {
+  color: #ff8098;
+}
+
+.dev {
+  position: fixed;
+  top: 50%;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  /* Collapsed: slide the body off-screen but keep the handle reachable. */
+  transform: translate(calc(100% - 1.75rem), -50%);
+  transition: transform 0.25s ease;
+}
+
+.dev--open {
+  transform: translate(0, -50%);
+}
+
+.dev__handle {
+  flex: none;
+  width: 1.75rem;
+  padding: 1.25rem 0;
+  border: none;
+  border-radius: 0.5rem 0 0 0.5rem;
+  background: var(--app-accent);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  writing-mode: vertical-rl;
+  cursor: pointer;
+}
+
+.dev__body {
+  width: min(17rem, 80vw);
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  background: rgb(15 16 33 / 96%);
+  border-left: 1px solid rgb(255 255 255 / 12%);
+  font-size: 0.78rem;
+}
+
+.dev__title {
+  margin: 0;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--app-muted);
+}
+
+.dev__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.dev__label {
+  display: flex;
+  justify-content: space-between;
+  color: var(--app-muted);
+}
+
+.dev__label b {
+  color: var(--app-fg);
+}
+
+.dev__seg {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.dev__seg button {
+  flex: 1;
+  padding: 0.4rem 0.25rem;
+  border: 1px solid rgb(255 255 255 / 15%);
+  border-radius: 0.4rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.dev__seg button.is-active {
+  border-color: var(--app-accent);
+  background: var(--app-accent);
+  color: #fff;
+}
+
+.dev__check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--app-muted);
+}
+
+.dev__reset {
+  padding: 0.45rem;
+  border: 1px solid rgb(255 255 255 / 15%);
+  border-radius: 0.4rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.dev__meta {
+  margin: 0;
+  color: var(--app-muted);
+}
+
+input[type='range'] {
+  width: 100%;
+  accent-color: var(--app-accent);
+}
