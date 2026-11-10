@@ -12,6 +12,9 @@
  * Both nodes are found by name inside the GLB:
  *   eink  -> "E-ink • paper display • two-thirds width"   (~35 × 12 mm)
  *   glass -> "Screen • black glass • 96 × 40 × 1 mm"      (~51 × 39 mm)
+ *
+ * The e-ink strip draws its own dev artwork; what appears on the glass is decided by
+ * the stack of canvas views in `views/`, which is wired up in `game.ts`.
  */
 
 export type ScreenTheme = 'paper' | 'glass';
@@ -25,6 +28,8 @@ export interface ScreenDefinition {
   label: string;
   /** Picks the built-in dev artwork: matte paper or backlit glass. */
   theme: ScreenTheme;
+  /** Accepts taps while live, so the canvas views on it can have buttons. */
+  interactive?: boolean;
 }
 
 export interface ScreenConfig {
@@ -66,6 +71,7 @@ export const SCREEN_CONFIG: ScreenConfig = {
       node: 'Screen black glass',
       label: 'MAIN',
       theme: 'glass',
+      interactive: true,
     },
   ],
 };

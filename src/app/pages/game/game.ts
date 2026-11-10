@@ -16,6 +16,7 @@ import { DiceRoll, DiceService } from '../../services/dice.service';
 import { DiceMachine } from './dice-machine';
 import { Keypad } from './keypad';
 import { Screens } from './screens';
+import { ScreenRouter } from './views/router';
 import { SCREEN_CONFIG } from './screen.config';
 import { DICE_CONFIG } from './dice.config';
 import {
@@ -125,6 +126,8 @@ export class Game implements AfterViewInit, OnDestroy {
   protected readonly rigWarning = signal('');
   /** True while the DOM overlays are shown; false once they are frozen into textures. */
   protected readonly screensLive = signal(false);
+  /** Current view stack on the glass screen, e.g. "chapter-1 › settings". */
+  protected readonly screenPath = signal('');
 
   private renderer: WebGLRenderer | null = null;
   private environment: Texture | null = null;
@@ -139,6 +142,7 @@ export class Game implements AfterViewInit, OnDestroy {
   private readonly machine = new DiceMachine();
   private readonly keypad = new Keypad();
   private readonly screens = new Screens();
+  private readonly router = new ScreenRouter();
   private readonly raycaster = new Raycaster();
   private readonly pointer = new Vector2();
   private activeCamera: PerspectiveCamera | OrthographicCamera | null = null;
@@ -173,6 +177,8 @@ export class Game implements AfterViewInit, OnDestroy {
     window.removeEventListener('pointercancel', this.onPointerUp);
     this.machine.onSettled = null;
     this.keypad.onPress = null;
+    this.router.onChange = null;
+    this.router.onInvalidate = null;
     this.screens.dispose();
 
     if (this.tapTimer !== null) {
@@ -256,6 +262,19 @@ export class Game implements AfterViewInit, OnDestroy {
     });
   }
 
+  /** Puts the canvas view stack in charge of the glass screen. */
+  private bindViews(): void {
+    this.screens.setPainter('glass', (frame) => this.router.paint(frame));
+    this.screens.onPointer = (id, phase, x, y) => {
+      if (id === 'glass') {
+        this.router.pointer(phase, x, y);
+      }
+    };
+    this.router.onInvalidate = () => this.screens.invalidate();
+    this.router.onChange = (path) => this.zone.run(() => this.screenPath.set(path));
+    this.zone.run(() => this.screenPath.set(this.router.path));
+  }
+
   private init(): void {
     const canvas = this.canvasRef().nativeElement;
 
@@ -292,8 +311,12 @@ export class Game implements AfterViewInit, OnDestroy {
         this.lastRoll.set(roll);
         this.rolling.set(false);
       });
-    this.keypad.onPress = (id) => this.zone.run(() => this.lastKey.set(id));
+    this.keypad.onPress = (id) => {
+      this.router.key(id);
+      this.zone.run(() => this.lastKey.set(id));
+    };
     this.screens.onModeChange = (live) => this.zone.run(() => this.screensLive.set(live));
+    this.bindViews();
 
     this.lastFrameMs = performance.now();
     this.frameHandle = requestAnimationFrame(this.renderFrame);

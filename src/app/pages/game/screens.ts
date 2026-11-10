@@ -38,6 +38,9 @@ export interface ScreenPaintContext {
 
 export type ScreenPainter = (frame: ScreenPaintContext) => void;
 
+/** Raw pointer phases forwarded from an interactive overlay canvas. */
+export type ScreenPointerPhase = 'down' | 'up' | 'cancel';
+
 /** CSS box of an overlay canvas, in pixels relative to the WebGL canvas. */
 interface ScreenRect {
   left: number;
@@ -95,7 +98,9 @@ function localBounds(node: Object3D): Box3 {
 class Screen {
   /** Plane parented to the screen mesh, so it inherits the face's exact tilt. */
   mesh: Mesh<PlaneGeometry, MeshBasicMaterial> | null = null;
-  painter: ScreenPainter;
+  /** Draws the surface. `null` leaves the real screen showing through. */
+  painter: ScreenPainter | null;
+  onPointer: ((phase: ScreenPointerPhase, x: number, y: number) => void) | null = null;
 
   private canvas: HTMLCanvasElement | null = null;
   private context: CanvasRenderingContext2D | null = null;
@@ -109,7 +114,7 @@ class Screen {
     readonly definition: ScreenDefinition,
     private readonly config: ScreenConfig,
   ) {
-    this.painter = definition.theme === 'paper' ? paintPaper : paintGlass;
+    this.painter = definition.theme === 'paper' ? paintPaper : null;
   }
 
   get ready(): boolean {
@@ -120,6 +125,14 @@ class Screen {
     this.canvas = canvas;
     this.context = canvas.getContext('2d');
     canvas.style.display = 'none';
+
+    if (this.definition.interactive) {
+      canvas.style.pointerEvents = 'auto';
+      canvas.style.touchAction = 'none';
+      canvas.addEventListener('pointerdown', this.handleDown);
+      canvas.addEventListener('pointerup', this.handleUp);
+      canvas.addEventListener('pointercancel', this.handleCancel);
+    }
   }
 
   /** Builds the snapshot plane over `node`'s outward face. */
@@ -166,7 +179,8 @@ class Screen {
     mesh.name = `Overlay • ${this.definition.id}`;
     mesh.rotation.set(...face.rotation);
     mesh.position.copy(center);
-    mesh.position[normal] = box.max[normal] + this.config.liftMetres / (Math.abs(scale[normal]) || 1);
+    mesh.position[normal] =
+      box.max[normal] + this.config.liftMetres / (Math.abs(scale[normal]) || 1);
     mesh.visible = false;
     // Never steal a tap from the keys or the lever underneath.
     mesh.raycast = () => undefined;
@@ -188,6 +202,12 @@ class Screen {
     const ctx = this.context;
     const canvas = this.canvas;
     if (!ctx || !canvas) {
+      return;
+    }
+
+    if (!this.painter) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       return;
     }
 
@@ -255,6 +275,14 @@ class Screen {
     this.hideDom();
     this.rect = null;
 
+    const canvas = this.canvas;
+    if (canvas && this.definition.interactive) {
+      canvas.removeEventListener('pointerdown', this.handleDown);
+      canvas.removeEventListener('pointerup', this.handleUp);
+      canvas.removeEventListener('pointercancel', this.handleCancel);
+    }
+    this.onPointer = null;
+
     const mesh = this.mesh;
     if (mesh) {
       mesh.removeFromParent();
@@ -266,6 +294,40 @@ class Screen {
     this.texture?.dispose();
     this.texture = null;
     this.corners.length = 0;
+  }
+
+  private readonly handleDown = (event: PointerEvent): void => {
+    // Capture so a finger that slides off the screen still reports its release.
+    this.canvas?.setPointerCapture(event.pointerId);
+    event.preventDefault();
+    this.report('down', event);
+  };
+
+  private readonly handleUp = (event: PointerEvent): void => {
+    this.report('up', event);
+  };
+
+  private readonly handleCancel = (event: PointerEvent): void => {
+    this.report('cancel', event);
+  };
+
+  /** Turns a client-space pointer event into canvas pixels. */
+  private report(phase: ScreenPointerPhase, event: PointerEvent): void {
+    const canvas = this.canvas;
+    if (!canvas || !this.onPointer) {
+      return;
+    }
+
+    const bounds = canvas.getBoundingClientRect();
+    if (bounds.width === 0 || bounds.height === 0) {
+      return;
+    }
+
+    this.onPointer(
+      phase,
+      ((event.clientX - bounds.left) / bounds.width) * canvas.width,
+      ((event.clientY - bounds.top) / bounds.height) * canvas.height,
+    );
   }
 
   /** Only touches the style when the box actually moved, to avoid needless layout. */
@@ -305,6 +367,8 @@ class Screen {
 export class Screens {
   /** Fired when the overlays flip between live DOM canvases and frozen textures. */
   onModeChange: ((live: boolean) => void) | null = null;
+  /** Taps on an interactive surface, in that surface's canvas pixels. */
+  onPointer: ((id: string, phase: ScreenPointerPhase, x: number, y: number) => void) | null = null;
 
   readonly info: ScreenInfo = { lastKey: '', roll: '', rolling: false };
 
@@ -316,6 +380,9 @@ export class Screens {
 
   constructor(private readonly config: ScreenConfig = SCREEN_CONFIG) {
     this.screens = config.screens.map((definition) => new Screen(definition, config));
+    for (const screen of this.screens) {
+      screen.onPointer = (phase, x, y) => this.onPointer?.(screen.definition.id, phase, x, y);
+    }
   }
 
   get ready(): boolean {
@@ -336,6 +403,11 @@ export class Screens {
     if (screen) {
       screen.painter = painter;
     }
+  }
+
+  /** Repaints the live canvases on the next frame instead of waiting for the tick. */
+  invalidate(): void {
+    this.sinceRepaintMs = Infinity;
   }
 
   /** Hangs an overlay plane off each screen mesh. Returns the fragments it missed. */
@@ -405,25 +477,8 @@ export class Screens {
     this.attached = false;
     this.live = false;
     this.onModeChange = null;
+    this.onPointer = null;
   }
-}
-
-function roundedRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number,
-): void {
-  const r = Math.min(radius, width / 2, height / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + width, y, x + width, y + height, r);
-  ctx.arcTo(x + width, y + height, x, y + height, r);
-  ctx.arcTo(x, y + height, x, y, r);
-  ctx.arcTo(x, y, x + width, y, r);
-  ctx.closePath();
 }
 
 function seconds(elapsedMs: number): string {
@@ -472,63 +527,4 @@ function paintPaper(frame: ScreenPaintContext): void {
     ctx.fillStyle = ink;
     ctx.fillRect(x, height - unit * 7, unit * 6, unit * 2);
   }
-}
-
-/** Dev artwork for the black glass screen: backlit panel, orange accents. */
-function paintGlass(frame: ScreenPaintContext): void {
-  const { ctx, width, height, definition, info, elapsedMs, frozen } = frame;
-  const unit = height / 100;
-  const accent = '#ff8a3d';
-
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, width, height);
-
-  const glow = ctx.createLinearGradient(0, 0, 0, height);
-  glow.addColorStop(0, '#13172a');
-  glow.addColorStop(1, '#05070f');
-  ctx.fillStyle = glow;
-  roundedRect(ctx, 0, 0, width, height, unit * 6);
-  ctx.fill();
-
-  ctx.strokeStyle = 'rgba(255, 138, 61, 0.45)';
-  ctx.lineWidth = unit * 1.2;
-  roundedRect(ctx, unit * 3, unit * 3, width - unit * 6, height - unit * 6, unit * 5);
-  ctx.stroke();
-
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'left';
-
-  ctx.fillStyle = accent;
-  ctx.font = `600 ${unit * 7}px "Segoe UI", system-ui, sans-serif`;
-  ctx.fillText(`${definition.label} • CANVAS 2D`, unit * 9, unit * 13);
-
-  ctx.textAlign = 'right';
-  ctx.fillStyle = frozen ? '#ff5f6d' : 'rgba(233, 238, 255, 0.65)';
-  ctx.fillText(frozen ? 'FROZEN' : 'LIVE', width - unit * 9, unit * 13);
-
-  ctx.textAlign = 'left';
-  ctx.fillStyle = '#e9eeff';
-  ctx.font = `700 ${unit * 20}px "Segoe UI", system-ui, sans-serif`;
-  ctx.fillText(info.rolling ? 'ROLLING…' : 'READY', unit * 9, unit * 32);
-
-  ctx.font = `500 ${unit * 9}px "Segoe UI", system-ui, sans-serif`;
-  ctx.fillStyle = 'rgba(233, 238, 255, 0.78)';
-  const lines = [
-    `t     ${seconds(elapsedMs)}`,
-    `key   ${info.lastKey || '--'}`,
-    `dice  ${info.roll || '--'}`,
-    `px    ${width}×${height}`,
-  ];
-  lines.forEach((line, index) => {
-    ctx.fillText(line, unit * 9, unit * 48 + index * unit * 12);
-  });
-
-  // Sweeping bar: steady while live, stuck mid-travel once frozen.
-  const trackLeft = unit * 9;
-  const trackWidth = width - unit * 18;
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
-  ctx.fillRect(trackLeft, height - unit * 14, trackWidth, unit * 4);
-  const progress = (elapsedMs / 2400) % 1;
-  ctx.fillStyle = accent;
-  ctx.fillRect(trackLeft, height - unit * 14, trackWidth * progress, unit * 4);
 }
