@@ -43,6 +43,18 @@
   touch-action: none;
 }
 
+/**
+ * Overlay canvases. Everything about their box is written by the render loop, so the
+ * only job here is to take them out of flow and keep taps going through to the model.
+ */
+.game__screen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  pointer-events: none;
+}
+
 .game__status {
   position: absolute;
   inset: auto 0 1rem;

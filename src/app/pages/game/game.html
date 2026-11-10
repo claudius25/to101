@@ -4,6 +4,11 @@
   <div class="game__stage">
     <canvas #canvas class="game__canvas"></canvas>
 
+    <!-- One 2D overlay per screen. Positioned and shown/hidden from the render loop. -->
+    @for (screen of screenDefs; track screen.id) {
+      <canvas #screenCanvas class="game__screen" [attr.data-screen]="screen.id"></canvas>
+    }
+
     @if (status() === 'loading') {
       <p class="game__status">Loading device…</p>
     }
@@ -167,6 +172,16 @@
         Last key <b>{{ lastKey() }}</b>
       } @else {
         Press a key on the device
+      }
+    </p>
+
+    <h2 class="dev__title">Screens</h2>
+
+    <p class="dev__meta">
+      @if (screensLive()) {
+        Overlays <b>live</b> — 2D canvases on top
+      } @else {
+        Overlays <b>frozen</b> — snapshot texture on the model
       }
     </p>
 

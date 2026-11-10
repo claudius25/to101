@@ -49,15 +49,15 @@ export const DEVICE_VIEW_CONFIG: DeviceViewConfig = {
     mode: 'orthographic',
     fov: 35,
     azimuth: 0,
-    elevation: 68,
-    roll: 1,
+    elevation: 89,
+    roll: 0,
     margin: 1,
     autoRotate: false,
   },
   device: {
     pitch: 0,
     yaw: 0,
-    roll: 8,
+    roll: 0,
   },
 };
 

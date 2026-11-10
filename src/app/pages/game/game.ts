@@ -9,11 +9,14 @@ import {
   inject,
   signal,
   viewChild,
+  viewChildren,
 } from '@angular/core';
 import { SliderField } from '../../ui/slider-field/slider-field';
 import { DiceRoll, DiceService } from '../../services/dice.service';
 import { DiceMachine } from './dice-machine';
 import { Keypad } from './keypad';
+import { Screens } from './screens';
+import { SCREEN_CONFIG } from './screen.config';
 import { DICE_CONFIG } from './dice.config';
 import {
   CameraMode,
@@ -74,8 +77,11 @@ export class Game implements AfterViewInit, OnDestroy {
   private readonly zone = inject(NgZone);
   private readonly dice = inject(DiceService);
   private readonly canvasRef = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
+  private readonly screenRefs = viewChildren<ElementRef<HTMLCanvasElement>>('screenCanvas');
 
   protected readonly ranges = DEVICE_VIEW_RANGES;
+  /** Drives the overlay canvases in the template; order matches the bind order below. */
+  protected readonly screenDefs = SCREEN_CONFIG.screens;
 
   protected readonly cameraMode = signal<CameraMode>(DEVICE_VIEW_CONFIG.camera.mode);
   protected readonly azimuth = signal(DEVICE_VIEW_CONFIG.camera.azimuth);
@@ -117,6 +123,8 @@ export class Game implements AfterViewInit, OnDestroy {
   protected readonly lastKey = signal('');
   protected readonly rolling = signal(false);
   protected readonly rigWarning = signal('');
+  /** True while the DOM overlays are shown; false once they are frozen into textures. */
+  protected readonly screensLive = signal(false);
 
   private renderer: WebGLRenderer | null = null;
   private environment: Texture | null = null;
@@ -130,6 +138,7 @@ export class Game implements AfterViewInit, OnDestroy {
 
   private readonly machine = new DiceMachine();
   private readonly keypad = new Keypad();
+  private readonly screens = new Screens();
   private readonly raycaster = new Raycaster();
   private readonly pointer = new Vector2();
   private activeCamera: PerspectiveCamera | OrthographicCamera | null = null;
@@ -151,6 +160,7 @@ export class Game implements AfterViewInit, OnDestroy {
   private readonly up = new Vector3();
 
   ngAfterViewInit(): void {
+    this.bindScreens();
     this.zone.runOutsideAngular(() => this.init());
   }
 
@@ -163,6 +173,7 @@ export class Game implements AfterViewInit, OnDestroy {
     window.removeEventListener('pointercancel', this.onPointerUp);
     this.machine.onSettled = null;
     this.keypad.onPress = null;
+    this.screens.dispose();
 
     if (this.tapTimer !== null) {
       clearTimeout(this.tapTimer);
@@ -234,6 +245,17 @@ export class Game implements AfterViewInit, OnDestroy {
     setTimeout(() => this.copyState.set('idle'), 2000);
   }
 
+  /** Hands each template canvas to the overlay it backs, in config order. */
+  private bindScreens(): void {
+    const elements = this.screenRefs();
+    this.screenDefs.forEach((definition, index) => {
+      const element = elements[index];
+      if (element) {
+        this.screens.bind(definition.id, element.nativeElement);
+      }
+    });
+  }
+
   private init(): void {
     const canvas = this.canvasRef().nativeElement;
 
@@ -271,6 +293,7 @@ export class Game implements AfterViewInit, OnDestroy {
         this.rolling.set(false);
       });
     this.keypad.onPress = (id) => this.zone.run(() => this.lastKey.set(id));
+    this.screens.onModeChange = (live) => this.zone.run(() => this.screensLive.set(live));
 
     this.lastFrameMs = performance.now();
     this.frameHandle = requestAnimationFrame(this.renderFrame);
@@ -372,7 +395,8 @@ export class Game implements AfterViewInit, OnDestroy {
 
         const missing = this.machine.attach(model);
         const missingKeys = this.keypad.attach(model);
-        const absent = [...missing, ...missingKeys];
+        const missingScreens = this.screens.attach(model);
+        const absent = [...missing, ...missingKeys, ...missingScreens];
 
         this.zone.run(() => {
           this.dimensions.set(`${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}`);
@@ -408,8 +432,52 @@ export class Game implements AfterViewInit, OnDestroy {
     this.machine.update(deltaMs);
     this.keypad.update(deltaMs);
     this.activeCamera = this.updateCamera();
+    this.updateScreens(deltaMs, this.activeCamera);
     renderer.render(this.scene, this.activeCamera);
   };
+
+  /**
+   * The DOM overlays only line up with the screen faces while the device sits at the
+   * framing in `device-view.config.ts`. Anywhere else they are hidden and the last frame
+   * they drew is shown as a texture on the device instead.
+   */
+  private updateScreens(deltaMs: number, camera: PerspectiveCamera | OrthographicCamera): void {
+    if (!this.screens.ready) {
+      return;
+    }
+
+    const roll = this.lastRoll();
+    const info = this.screens.info;
+    info.lastKey = this.lastKey();
+    info.roll = roll ? `${roll.total} (${roll.wheelOne}+${roll.wheelTwo})` : '';
+    info.rolling = this.rolling();
+
+    const canvas = this.canvasRef().nativeElement;
+    const live = this.status() === 'ready' && this.atHomePose();
+    this.screens.update(deltaMs, live, camera, canvas.clientWidth, canvas.clientHeight);
+  }
+
+  /** True while every orbit and device angle is still within tolerance of the defaults. */
+  private atHomePose(): boolean {
+    if (this.autoRotate()) {
+      return false;
+    }
+
+    const { camera, device } = DEVICE_VIEW_CONFIG;
+    const tolerance = SCREEN_CONFIG.homeToleranceDeg;
+    // Shortest way round the circle, so -180 and 180 count as the same angle.
+    const near = (value: number, target: number): boolean =>
+      Math.abs(((((value - target + 180) % 360) + 360) % 360) - 180) <= tolerance;
+
+    return (
+      near(this.azimuth(), camera.azimuth) &&
+      near(this.elevation(), camera.elevation) &&
+      near(this.roll(), camera.roll) &&
+      near(this.deviceX(), device.pitch) &&
+      near(this.deviceY(), device.yaw) &&
+      near(this.deviceZ(), device.roll)
+    );
+  }
 
   /** Spins the device itself and re-projects its corners so the fit stays tight. */
   private applyDeviceRotation(): void {
