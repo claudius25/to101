@@ -36,28 +36,32 @@ class Key {
     this.tween.start(1, this.config.pressDurationMs, this.config.pressEasing);
   }
 
-  release(): void {
+  release(): boolean {
     if (!this.held) {
-      return;
+      return false;
     }
     this.held = false;
     this.tween.start(0, this.config.releaseDurationMs, this.config.releaseEasing);
+    return true;
   }
 
-  update(deltaMs: number): void {
+  /** Returns true when the safety net let the key go on its own this frame. */
+  update(deltaMs: number): boolean {
     if (!this.active) {
-      return;
+      return false;
     }
 
+    let released = false;
     if (this.held) {
       this.holdMs += deltaMs;
       if (this.config.maxHoldMs > 0 && this.holdMs >= this.config.maxHoldMs) {
-        this.release();
+        released = this.release();
       }
     }
 
     this.tween.update(deltaMs);
     this.apply();
+    return released;
   }
 
   private apply(): void {
@@ -78,6 +82,8 @@ class Key {
 /** Animates the keypad caps so they depress and spring back like real keys. */
 export class Keypad {
   onPress: ((id: string) => void) | null = null;
+  /** Fires when a held key is let go, including the automatic safety release. */
+  onRelease: ((id: string) => void) | null = null;
 
   private readonly keys: Key[];
 
@@ -126,18 +132,25 @@ export class Keypad {
   }
 
   release(id: string): void {
-    this.keys.find((candidate) => candidate.definition.id === id)?.release();
+    const key = this.keys.find((candidate) => candidate.definition.id === id);
+    if (key?.release()) {
+      this.onRelease?.(id);
+    }
   }
 
   releaseAll(): void {
     for (const key of this.keys) {
-      key.release();
+      if (key.release()) {
+        this.onRelease?.(key.definition.id);
+      }
     }
   }
 
   update(deltaMs: number): void {
     for (const key of this.keys) {
-      key.update(deltaMs);
+      if (key.update(deltaMs)) {
+        this.onRelease?.(key.definition.id);
+      }
     }
   }
 }

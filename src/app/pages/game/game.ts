@@ -143,8 +143,9 @@ export class Game implements AfterViewInit, OnDestroy {
   private lastFrameMs = 0;
   private tapCount = 0;
   private tapTimer: ReturnType<typeof setTimeout> | null = null;
-  private activePointerId: number | null = null;
-  private activeKey: string | null = null;
+  /** Finger to key id, so two or three caps can be held down together. */
+  private readonly keyPointers = new Map<number, string>();
+  private leverPointerId: number | null = null;
 
   private readonly machine = new DiceMachine();
   private readonly keypad = new Keypad();
@@ -186,6 +187,9 @@ export class Game implements AfterViewInit, OnDestroy {
     window.removeEventListener('pointercancel', this.onPointerUp);
     this.machine.onSettled = null;
     this.keypad.onPress = null;
+    this.keypad.onRelease = null;
+    this.keyPointers.clear();
+    this.leverPointerId = null;
     this.router.onChange = null;
     this.router.onInvalidate = null;
     this.eink.onReady = null;
@@ -331,6 +335,7 @@ export class Game implements AfterViewInit, OnDestroy {
       this.router.key(id);
       this.zone.run(() => this.lastKey.set(id));
     };
+    this.keypad.onRelease = (id) => this.router.keyUp(id);
     this.screens.onModeChange = (live) => {
       this.router.setLive(live);
       this.zone.run(() => this.screensLive.set(live));
@@ -348,10 +353,6 @@ export class Game implements AfterViewInit, OnDestroy {
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
-    if (this.activePointerId !== null) {
-      return;
-    }
-
     const hit = this.pick(event);
     if (!hit) {
       return;
@@ -360,10 +361,21 @@ export class Game implements AfterViewInit, OnDestroy {
     // Keys sit proud of the device, so they win a tie against "press anywhere".
     const keyId = this.keypad.keyAt(hit);
     if (keyId) {
+      // Several keys can be down at once — holding them is a game input — but one
+      // key only answers to the finger that got there first.
+      for (const held of this.keyPointers.values()) {
+        if (held === keyId) {
+          return;
+        }
+      }
+
       event.preventDefault();
-      this.activePointerId = event.pointerId;
-      this.activeKey = keyId;
+      this.keyPointers.set(event.pointerId, keyId);
       this.keypad.press(keyId);
+      return;
+    }
+
+    if (this.leverPointerId !== null) {
       return;
     }
 
@@ -376,24 +388,24 @@ export class Game implements AfterViewInit, OnDestroy {
     }
 
     event.preventDefault();
-    this.activePointerId = event.pointerId;
+    this.leverPointerId = event.pointerId;
     this.machine.press(this.dice.roll());
     this.zone.run(() => this.rolling.set(true));
   };
 
   private readonly onPointerUp = (event: PointerEvent): void => {
-    if (this.activePointerId !== event.pointerId) {
+    const keyId = this.keyPointers.get(event.pointerId);
+    if (keyId !== undefined) {
+      this.keyPointers.delete(event.pointerId);
+      this.keypad.release(keyId);
       return;
     }
 
-    this.activePointerId = null;
-
-    if (this.activeKey) {
-      this.keypad.release(this.activeKey);
-      this.activeKey = null;
+    if (this.leverPointerId !== event.pointerId) {
       return;
     }
 
+    this.leverPointerId = null;
     this.machine.release();
   };
 

@@ -110,4 +110,6 @@ export interface ScreenView {
   pointer?(event: ViewPointer): boolean;
   /** A device key was pressed. Return true to stop the router handling it. */
   key?(key: string, nav: ViewNav): boolean;
+  /** A key the view claimed on the way down was let go. */
+  keyUp?(key: string, nav: ViewNav): void;
 }

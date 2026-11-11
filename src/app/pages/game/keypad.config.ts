@@ -30,7 +30,9 @@ export interface KeypadConfig {
   releaseEasing: EasingName;
   /**
    * Safety net: release the key automatically after this long even if the
-   * pointer-up never arrives. 0 disables it.
+   * pointer-up never arrives. 0 disables it, which is what holding a key as a
+   * game input needs — `pointerup` and `pointercancel` are watched on the window,
+   * so a release is not realistically missed.
    */
   maxHoldMs: number;
   /** Keys, in reading order. */
@@ -44,7 +46,7 @@ export const KEYPAD_CONFIG: KeypadConfig = {
   pressEasing: 'easeOutQuad',
   releaseDurationMs: 100,
   releaseEasing: 'easeOutBack',
-  maxHoldMs: 4000,
+  maxHoldMs: 0,
   keys: [
     { id: 'close', node: 'column 2 upper' },
     { id: 'left', node: 'column 2 lower' },

@@ -77,6 +77,8 @@ export class ChapterTidyBed implements ScreenView {
   private readonly spiders: Spider[] = [];
   /** Pointer id to lane. -1 means the finger is down but outside every zone. */
   private readonly touches = new Map<number, number>();
+  /** Lanes held down by the device keys rather than by a finger on the glass. */
+  private readonly keyLanes = new Set<number>();
 
   private progress = 0;
   private started = false;
@@ -110,12 +112,32 @@ export class ChapterTidyBed implements ScreenView {
   }
 
   exit(): void {
-    this.touches.clear();
+    this.releaseAll();
   }
 
   /** Rotated away, blocked, or covered by a sheet: every finger counts as lifted. */
   suspend(): void {
-    this.touches.clear();
+    this.releaseAll();
+  }
+
+  /** The three bottom-row keys stand in for the zones under them. */
+  key(key: string): boolean {
+    const lane = this.config.laneKeys.indexOf(key);
+    if (lane < 0) {
+      return false;
+    }
+
+    if (!this.finished) {
+      this.keyLanes.add(lane);
+    }
+    return true;
+  }
+
+  keyUp(key: string): void {
+    const lane = this.config.laneKeys.indexOf(key);
+    if (lane >= 0) {
+      this.keyLanes.delete(lane);
+    }
   }
 
   update(deltaMs: number): void {
@@ -164,7 +186,6 @@ export class ChapterTidyBed implements ScreenView {
       this.touches.clear();
       return true;
     }
-
     if (event.phase === 'down') {
       this.touches.set(event.id, this.laneAt(event.x, event.y));
     } else if (event.phase === 'move') {
@@ -180,16 +201,15 @@ export class ChapterTidyBed implements ScreenView {
   }
 
   paint(frame: ViewFrame): void {
-    const { ctx, width, height, unit } = frame;
+    const { ctx, width, height } = frame;
     this.width = width;
     this.height = height;
 
     const zone = Math.min(width / LANES, height);
     const top = height - zone;
 
+    // Square corners: the photo runs edge to edge, unlike the other views.
     ctx.save();
-    roundedRect(ctx, 0, 0, width, height, unit * 6);
-    ctx.clip();
 
     ctx.fillStyle = '#efbd9f';
     ctx.fillRect(0, 0, width, height);
@@ -226,7 +246,7 @@ export class ChapterTidyBed implements ScreenView {
 
   private reset(): void {
     this.spiders.length = 0;
-    this.touches.clear();
+    this.releaseAll();
     this.progress = 0;
     this.started = false;
     this.finished = false;
@@ -234,11 +254,16 @@ export class ChapterTidyBed implements ScreenView {
     this.spawnIn = this.tuning.firstSpawnSeconds;
   }
 
+  private releaseAll(): void {
+    this.touches.clear();
+    this.keyLanes.clear();
+  }
+
   private finish(): void {
     this.finished = true;
     this.progress = 1;
     this.spiders.length = 0;
-    this.touches.clear();
+    this.releaseAll();
   }
 
   /** Loads a random before/after pair, so a replay is a different room. */
@@ -264,7 +289,7 @@ export class ChapterTidyBed implements ScreenView {
   }
 
   private heldLanes(): Set<number> {
-    const held = new Set<number>();
+    const held = new Set<number>(this.keyLanes);
     for (const lane of this.touches.values()) {
       if (lane >= 0) {
         held.add(lane);

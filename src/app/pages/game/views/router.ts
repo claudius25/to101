@@ -194,7 +194,7 @@ export class ScreenRouter implements ViewNav {
 
   /** A device key was pressed. The top view gets first refusal. */
   key(key: string): void {
-    if (this.blocked) {
+    if (this.paused) {
       return;
     }
 
@@ -215,6 +215,16 @@ export class ScreenRouter implements ViewNav {
     if (key === BACK_KEY) {
       this.back();
     }
+  }
+
+  /** A device key was let go. Only the top view cares. */
+  keyUp(key: string): void {
+    if (this.paused) {
+      return;
+    }
+
+    this.top.keyUp?.(key, this);
+    this.invalidate();
   }
 
   private open(id: ViewId): void {

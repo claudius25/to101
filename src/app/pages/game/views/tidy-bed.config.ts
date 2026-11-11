@@ -33,6 +33,11 @@ export interface TidyBedConfig {
   difficulty: TidyBedDifficulty;
   /** Folders under `assets/tidy-bed/`. One is picked at random for each round. */
   sets: string[];
+  /**
+   * Device keys that stand in for the three zones, left to right. Holding one counts
+   * exactly like holding the zone under it, and they combine with real touches.
+   */
+  laneKeys: [string, string, string];
   /** File names inside a set folder. */
   beforeFile: string;
   afterFile: string;
@@ -46,6 +51,7 @@ export interface TidyBedConfig {
 export const TIDY_BED_CONFIG: TidyBedConfig = {
   difficulty: 'normal',
   sets: ['1', '2', '3', '4', '5'],
+  laneKeys: ['left', 'down', 'right'],
   beforeFile: 'before.png',
   afterFile: 'after.jpg',
   hit: { opacity: 0.26, durationMs: 560 },
