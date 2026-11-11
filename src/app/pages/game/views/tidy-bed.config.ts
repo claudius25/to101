@@ -45,7 +45,7 @@ export interface TidyBedConfig {
 
 export const TIDY_BED_CONFIG: TidyBedConfig = {
   difficulty: 'normal',
-  sets: ['1'],
+  sets: ['1', '2', '3', '4', '5'],
   beforeFile: 'before.png',
   afterFile: 'after.jpg',
   hit: { opacity: 0.26, durationMs: 560 },
