@@ -17,6 +17,7 @@ import { DiceMachine } from './dice-machine';
 import { Keypad } from './keypad';
 import { Screens } from './screens';
 import { ScreenRouter } from './views/router';
+import { StudioLighting } from './lighting/studio-lighting';
 import { Curfew, CurfewOverride } from './e-ink/curfew';
 import { CURFEW_CONFIG } from './e-ink/curfew.config';
 import { EinkDisplay } from './e-ink/eink-display';
@@ -29,27 +30,22 @@ import {
   DeviceViewConfig,
 } from './device-view.config';
 import {
-  ACESFilmicToneMapping,
   Box3,
-  DirectionalLight,
   Group,
   MathUtils,
   Mesh,
   Object3D,
   OrthographicCamera,
-  PMREMGenerator,
   PerspectiveCamera,
   Raycaster,
   SRGBColorSpace,
   Scene,
   Sphere,
-  Texture,
   Vector2,
   Vector3,
   WebGLRenderer,
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 
 const MODEL_URL = 'assets/aluminium-device-game.glb';
 const ELEVATION_LIMIT = 89;
@@ -137,7 +133,6 @@ export class Game implements AfterViewInit, OnDestroy {
   protected readonly curfewRule = signal('');
 
   private renderer: WebGLRenderer | null = null;
-  private environment: Texture | null = null;
   private model: Object3D | null = null;
   private frameHandle = 0;
   private lastFrameMs = 0;
@@ -151,6 +146,7 @@ export class Game implements AfterViewInit, OnDestroy {
   private readonly keypad = new Keypad();
   private readonly screens = new Screens();
   private readonly router = new ScreenRouter();
+  private readonly lighting = new StudioLighting();
   private readonly curfew = new Curfew();
   private readonly eink = new EinkDisplay(this.curfew);
   private readonly raycaster = new Raycaster();
@@ -208,9 +204,7 @@ export class Game implements AfterViewInit, OnDestroy {
 
     this.scene.remove(this.pivot);
 
-    this.environment?.dispose();
-    this.environment = null;
-    this.scene.environment = null;
+    this.lighting.dispose();
     this.renderer?.dispose();
     this.renderer = null;
   }
@@ -308,21 +302,10 @@ export class Game implements AfterViewInit, OnDestroy {
     const renderer = this.renderer;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = SRGBColorSpace;
-    renderer.toneMapping = ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.1;
     renderer.setClearAlpha(0);
 
-    // Brushed aluminium only reads correctly with an environment to reflect.
-    const pmrem = new PMREMGenerator(renderer);
-    this.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environment = this.environment;
-    pmrem.dispose();
-
-    const key = new DirectionalLight(0xffffff, 2.2);
-    key.position.set(2, 4, 3);
-    const fill = new DirectionalLight(0xaab4ff, 0.8);
-    fill.position.set(-3, 1, -2);
-    this.scene.add(key, fill);
+    // Owns tone mapping, the environment map and every light in the scene.
+    this.lighting.prepare(renderer, this.scene);
 
     this.loadModel();
     this.bindPointer(canvas);
@@ -450,7 +433,8 @@ export class Game implements AfterViewInit, OnDestroy {
         const missing = this.machine.attach(model);
         const missingKeys = this.keypad.attach(model);
         const missingScreens = this.screens.attach(model);
-        const absent = [...missing, ...missingKeys, ...missingScreens];
+        const missingLights = this.lighting.attach(model, this.pivot);
+        const absent = [...missing, ...missingKeys, ...missingScreens, ...missingLights];
 
         this.zone.run(() => {
           this.dimensions.set(`${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}`);
