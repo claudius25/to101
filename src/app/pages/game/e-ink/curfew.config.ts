@@ -65,8 +65,11 @@ export const CURFEW_CONFIG: CurfewConfig = {
       to: '24:00',
       rows: [
         'After **9:00 PM**, no more playing!',
-        'First, brush your teeth,',
-        'then go to bed if you want to live __**100**__ years!',
+        'Sleep is not wasted time. While you sleep, your brain',
+        'strengthens memories, your body repairs tissues, and',
+        'your immune system gets ready for tomorrow.',
+        'Brush your teeth, get to bed,',
+        '**RECOVERY IS PART OF THE MISSION!**',
       ],
     },
     {
