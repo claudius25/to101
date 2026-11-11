@@ -17,6 +17,9 @@ import { DiceMachine } from './dice-machine';
 import { Keypad } from './keypad';
 import { Screens } from './screens';
 import { ScreenRouter } from './views/router';
+import { Curfew, CurfewOverride } from './e-ink/curfew';
+import { CURFEW_CONFIG } from './e-ink/curfew.config';
+import { EinkDisplay } from './e-ink/eink-display';
 import { SCREEN_CONFIG } from './screen.config';
 import { DICE_CONFIG } from './dice.config';
 import {
@@ -128,6 +131,10 @@ export class Game implements AfterViewInit, OnDestroy {
   protected readonly screensLive = signal(false);
   /** Current view stack on the glass screen, e.g. "chapter-1 › settings". */
   protected readonly screenPath = signal('');
+  /** Curfew windows, and the dev override that previews them off the clock. */
+  protected readonly curfewRules = CURFEW_CONFIG.rules;
+  protected readonly curfewOverride = signal<CurfewOverride>('auto');
+  protected readonly curfewRule = signal('');
 
   private renderer: WebGLRenderer | null = null;
   private environment: Texture | null = null;
@@ -143,6 +150,8 @@ export class Game implements AfterViewInit, OnDestroy {
   private readonly keypad = new Keypad();
   private readonly screens = new Screens();
   private readonly router = new ScreenRouter();
+  private readonly curfew = new Curfew();
+  private readonly eink = new EinkDisplay(this.curfew);
   private readonly raycaster = new Raycaster();
   private readonly pointer = new Vector2();
   private activeCamera: PerspectiveCamera | OrthographicCamera | null = null;
@@ -179,6 +188,7 @@ export class Game implements AfterViewInit, OnDestroy {
     this.keypad.onPress = null;
     this.router.onChange = null;
     this.router.onInvalidate = null;
+    this.eink.onReady = null;
     this.screens.dispose();
 
     if (this.tapTimer !== null) {
@@ -262,14 +272,16 @@ export class Game implements AfterViewInit, OnDestroy {
     });
   }
 
-  /** Puts the canvas view stack in charge of the glass screen. */
+  /** Hands each surface to the module that draws it. */
   private bindViews(): void {
+    this.screens.setPainter('eink', (frame) => this.eink.paint(frame));
     this.screens.setPainter('glass', (frame) => this.router.paint(frame));
     this.screens.onPointer = (id, phase, x, y) => {
       if (id === 'glass') {
         this.router.pointer(phase, x, y);
       }
     };
+    this.eink.onReady = () => this.screens.invalidate();
     this.router.onInvalidate = () => this.screens.invalidate();
     this.router.onChange = (path) => this.zone.run(() => this.screenPath.set(path));
     this.zone.run(() => this.screenPath.set(this.router.path));
@@ -469,6 +481,8 @@ export class Game implements AfterViewInit, OnDestroy {
       return;
     }
 
+    this.updateCurfew();
+
     const roll = this.lastRoll();
     const info = this.screens.info;
     info.lastKey = this.lastKey();
@@ -478,6 +492,27 @@ export class Game implements AfterViewInit, OnDestroy {
     const canvas = this.canvasRef().nativeElement;
     const live = this.status() === 'ready' && this.atHomePose();
     this.screens.update(deltaMs, live, camera, canvas.clientWidth, canvas.clientHeight);
+  }
+
+  /**
+   * Reads the clock once a frame. Inside a curfew window the e-ink strip shows the
+   * warning and the glass screen is blocked: keys and the lever keep their animations,
+   * they simply stop reaching the views.
+   */
+  private updateCurfew(): void {
+    this.curfew.override = this.curfewOverride();
+
+    const rule = this.curfew.active();
+    const blocked = rule !== null;
+    if (this.router.blocked !== blocked) {
+      this.screens.invalidate();
+    }
+    this.router.blocked = blocked;
+
+    const label = rule ? `${rule.id} · ${rule.from}–${rule.to}` : 'none';
+    if (this.curfewRule() !== label) {
+      this.zone.run(() => this.curfewRule.set(label));
+    }
   }
 
   /** True while every orbit and device angle is still within tolerance of the defaults. */

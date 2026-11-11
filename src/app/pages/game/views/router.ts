@@ -30,6 +30,12 @@ export class ScreenRouter implements ViewNav {
   onChange: ((path: string) => void) | null = null;
   /** Asks the surface to repaint now instead of on its next tick. */
   onInvalidate: (() => void) | null = null;
+  /**
+   * While true the glass screen stays dark and swallows every tap and key: the device
+   * is inside a curfew window (see `e-ink/curfew.ts`). Keys still animate, they just do
+   * not reach the views, and the stack is left exactly as it was.
+   */
+  blocked = false;
 
   private readonly views = new Map<ViewId, ScreenView>();
   private readonly stack: ScreenView[] = [];
@@ -81,6 +87,16 @@ export class ScreenRouter implements ViewNav {
 
   /** Paints the whole stack bottom-up; only the top view's hotspots survive. */
   paint(frame: ScreenPaintContext): void {
+    frame.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    frame.ctx.clearRect(0, 0, frame.width, frame.height);
+
+    if (this.blocked) {
+      // Nothing drawn: the real black glass of the device shows through.
+      this.hits.reset();
+      this.pressed = null;
+      return;
+    }
+
     const view: ViewFrame = {
       ctx: frame.ctx,
       width: frame.width,
@@ -93,9 +109,6 @@ export class ScreenRouter implements ViewNav {
       hit: this.hits,
     };
 
-    frame.ctx.setTransform(1, 0, 0, 1, 0, 0);
-    frame.ctx.clearRect(0, 0, frame.width, frame.height);
-
     for (const entry of this.stack) {
       this.hits.reset();
       entry.paint(view);
@@ -104,6 +117,10 @@ export class ScreenRouter implements ViewNav {
 
   /** Pointer phases from the overlay canvas, in canvas pixels. */
   pointer(phase: 'down' | 'up' | 'cancel', x: number, y: number): void {
+    if (this.blocked) {
+      return;
+    }
+
     if (phase === 'down') {
       this.pressed = this.hits.find(x, y);
       if (this.pressed) {
@@ -127,6 +144,10 @@ export class ScreenRouter implements ViewNav {
 
   /** A device key was pressed. The top view gets first refusal. */
   key(key: string): void {
+    if (this.blocked) {
+      return;
+    }
+
     if (this.top.key?.(key, this)) {
       this.invalidate();
       return;

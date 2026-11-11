@@ -187,6 +187,39 @@
       }
     </p>
 
+    <h2 class="dev__title">E-ink</h2>
+
+    <p class="dev__meta">Curfew <b>{{ curfewRule() }}</b></p>
+
+    <div class="dev__field">
+      <span class="dev__label">Preview window</span>
+      <div class="dev__seg dev__seg--wrap">
+        <button
+          type="button"
+          [class.is-active]="curfewOverride() === 'auto'"
+          (click)="curfewOverride.set('auto')"
+        >
+          Auto
+        </button>
+        <button
+          type="button"
+          [class.is-active]="curfewOverride() === 'off'"
+          (click)="curfewOverride.set('off')"
+        >
+          Off
+        </button>
+        @for (rule of curfewRules; track rule.id) {
+          <button
+            type="button"
+            [class.is-active]="curfewOverride() === rule.id"
+            (click)="curfewOverride.set(rule.id)"
+          >
+            {{ rule.id }}
+          </button>
+        }
+      </div>
+    </div>
+
     <h2 class="dev__title">Save to config</h2>
 
     <p class="dev__hint">Paste into <code>device-view.config.ts</code> to make this the default.</p>

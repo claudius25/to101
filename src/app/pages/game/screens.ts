@@ -99,7 +99,7 @@ class Screen {
   /** Plane parented to the screen mesh, so it inherits the face's exact tilt. */
   mesh: Mesh<PlaneGeometry, MeshBasicMaterial> | null = null;
   /** Draws the surface. `null` leaves the real screen showing through. */
-  painter: ScreenPainter | null;
+  painter: ScreenPainter | null = null;
   onPointer: ((phase: ScreenPointerPhase, x: number, y: number) => void) | null = null;
 
   private canvas: HTMLCanvasElement | null = null;
@@ -113,9 +113,7 @@ class Screen {
   constructor(
     readonly definition: ScreenDefinition,
     private readonly config: ScreenConfig,
-  ) {
-    this.painter = definition.theme === 'paper' ? paintPaper : null;
-  }
+  ) {}
 
   get ready(): boolean {
     return this.mesh !== null && this.context !== null;
@@ -478,53 +476,5 @@ export class Screens {
     this.live = false;
     this.onModeChange = null;
     this.onPointer = null;
-  }
-}
-
-function seconds(elapsedMs: number): string {
-  return `${(elapsedMs / 1000).toFixed(1)}s`;
-}
-
-/** Dev artwork for the e-ink strip: matte paper, hard black ink, no glow. */
-function paintPaper(frame: ScreenPaintContext): void {
-  const { ctx, width, height, definition, info, elapsedMs, frozen } = frame;
-  const unit = height / 100;
-  const ink = '#15150f';
-
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = '#e9e7df';
-  ctx.fillRect(0, 0, width, height);
-
-  ctx.strokeStyle = 'rgba(21, 21, 15, 0.55)';
-  ctx.lineWidth = unit * 1.5;
-  ctx.strokeRect(unit * 3, unit * 3, width - unit * 6, height - unit * 6);
-
-  ctx.fillStyle = ink;
-  ctx.textBaseline = 'middle';
-
-  ctx.font = `600 ${unit * 14}px "Segoe UI", system-ui, sans-serif`;
-  ctx.textAlign = 'left';
-  ctx.fillText(definition.label, unit * 8, unit * 18);
-
-  ctx.textAlign = 'right';
-  ctx.fillText(frozen ? 'FROZEN' : seconds(elapsedMs), width - unit * 8, unit * 18);
-
-  ctx.textAlign = 'left';
-  ctx.font = `700 ${unit * 32}px "Segoe UI", system-ui, sans-serif`;
-  ctx.fillText(info.rolling ? 'ROLLING' : 'TO 101', unit * 8, height * 0.52);
-
-  ctx.font = `500 ${unit * 14}px "Segoe UI", system-ui, sans-serif`;
-  ctx.fillText(`KEY ${info.lastKey || '--'}`, unit * 8, height - unit * 16);
-
-  ctx.textAlign = 'right';
-  ctx.fillText(info.roll ? `DICE ${info.roll}` : 'DICE --', width - unit * 8, height - unit * 16);
-
-  // A marching tick proves the canvas is live rather than a frozen texture.
-  if (!frozen) {
-    const span = width - unit * 16;
-    const x = unit * 8 + ((elapsedMs / 12) % span);
-    ctx.fillStyle = ink;
-    ctx.fillRect(x, height - unit * 7, unit * 6, unit * 2);
   }
 }

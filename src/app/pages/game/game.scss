@@ -168,6 +168,14 @@
   gap: 0.25rem;
 }
 
+.dev__seg--wrap {
+  flex-wrap: wrap;
+}
+
+.dev__seg--wrap button {
+  flex: 1 1 3.5rem;
+}
+
 .dev__seg button {
   flex: 1;
   padding: 0.4rem 0.25rem;

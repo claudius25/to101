@@ -13,21 +13,17 @@
  *   eink  -> "E-ink • paper display • two-thirds width"   (~35 × 12 mm)
  *   glass -> "Screen • black glass • 96 × 40 × 1 mm"      (~51 × 39 mm)
  *
- * The e-ink strip draws its own dev artwork; what appears on the glass is decided by
- * the stack of canvas views in `views/`, which is wired up in `game.ts`.
+ * The e-ink strip is painted by `e-ink/`, and what appears on the glass is decided by
+ * the stack of canvas views in `views/`. Both are wired up in `game.ts`.
  */
-
-export type ScreenTheme = 'paper' | 'glass';
 
 export interface ScreenDefinition {
   /** Stable id used to bind a DOM canvas and to swap in a custom painter. */
   id: string;
   /** Substring of the screen node name in the GLB. */
   node: string;
-  /** Shown on the placeholder artwork and in the dev panel. */
+  /** Shown on the surface's artwork and in the dev panel. */
   label: string;
-  /** Picks the built-in dev artwork: matte paper or backlit glass. */
-  theme: ScreenTheme;
   /** Accepts taps while live, so the canvas views on it can have buttons. */
   interactive?: boolean;
 }
@@ -53,7 +49,7 @@ export interface ScreenConfig {
 }
 
 export const SCREEN_CONFIG: ScreenConfig = {
-  pixelsPerMetre: 10000,
+  pixelsPerMetre: 14000,
   maxTextureSize: 1024,
   liftMetres: 0.00015,
   inset: 0,
@@ -64,13 +60,11 @@ export const SCREEN_CONFIG: ScreenConfig = {
       id: 'eink',
       node: 'E-ink paper display',
       label: 'E-INK',
-      theme: 'paper',
     },
     {
       id: 'glass',
       node: 'Screen black glass',
       label: 'MAIN',
-      theme: 'glass',
       interactive: true,
     },
   ],
