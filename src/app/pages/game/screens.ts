@@ -39,7 +39,7 @@ export interface ScreenPaintContext {
 export type ScreenPainter = (frame: ScreenPaintContext) => void;
 
 /** Raw pointer phases forwarded from an interactive overlay canvas. */
-export type ScreenPointerPhase = 'down' | 'up' | 'cancel';
+export type ScreenPointerPhase = 'down' | 'move' | 'up' | 'cancel';
 
 /** CSS box of an overlay canvas, in pixels relative to the WebGL canvas. */
 interface ScreenRect {
@@ -100,7 +100,7 @@ class Screen {
   mesh: Mesh<PlaneGeometry, MeshBasicMaterial> | null = null;
   /** Draws the surface. `null` leaves the real screen showing through. */
   painter: ScreenPainter | null = null;
-  onPointer: ((phase: ScreenPointerPhase, x: number, y: number) => void) | null = null;
+  onPointer: ((phase: ScreenPointerPhase, id: number, x: number, y: number) => void) | null = null;
 
   private canvas: HTMLCanvasElement | null = null;
   private context: CanvasRenderingContext2D | null = null;
@@ -128,8 +128,10 @@ class Screen {
       canvas.style.pointerEvents = 'auto';
       canvas.style.touchAction = 'none';
       canvas.addEventListener('pointerdown', this.handleDown);
+      canvas.addEventListener('pointermove', this.handleMove);
       canvas.addEventListener('pointerup', this.handleUp);
       canvas.addEventListener('pointercancel', this.handleCancel);
+      canvas.addEventListener('contextmenu', this.handleContextMenu);
     }
   }
 
@@ -276,8 +278,10 @@ class Screen {
     const canvas = this.canvas;
     if (canvas && this.definition.interactive) {
       canvas.removeEventListener('pointerdown', this.handleDown);
+      canvas.removeEventListener('pointermove', this.handleMove);
       canvas.removeEventListener('pointerup', this.handleUp);
       canvas.removeEventListener('pointercancel', this.handleCancel);
+      canvas.removeEventListener('contextmenu', this.handleContextMenu);
     }
     this.onPointer = null;
 
@@ -296,9 +300,18 @@ class Screen {
 
   private readonly handleDown = (event: PointerEvent): void => {
     // Capture so a finger that slides off the screen still reports its release.
-    this.canvas?.setPointerCapture(event.pointerId);
+    // It throws when the pointer has already ended, which is not worth caring about.
+    try {
+      this.canvas?.setPointerCapture(event.pointerId);
+    } catch {
+      // Ignored: the pointer is gone, and the up/cancel will arrive anyway.
+    }
     event.preventDefault();
     this.report('down', event);
+  };
+
+  private readonly handleMove = (event: PointerEvent): void => {
+    this.report('move', event);
   };
 
   private readonly handleUp = (event: PointerEvent): void => {
@@ -307,6 +320,11 @@ class Screen {
 
   private readonly handleCancel = (event: PointerEvent): void => {
     this.report('cancel', event);
+  };
+
+  private readonly handleContextMenu = (event: Event): void => {
+    // A long press on a touch zone must not raise the system menu.
+    event.preventDefault();
   };
 
   /** Turns a client-space pointer event into canvas pixels. */
@@ -323,6 +341,7 @@ class Screen {
 
     this.onPointer(
       phase,
+      event.pointerId,
       ((event.clientX - bounds.left) / bounds.width) * canvas.width,
       ((event.clientY - bounds.top) / bounds.height) * canvas.height,
     );
@@ -366,7 +385,11 @@ export class Screens {
   /** Fired when the overlays flip between live DOM canvases and frozen textures. */
   onModeChange: ((live: boolean) => void) | null = null;
   /** Taps on an interactive surface, in that surface's canvas pixels. */
-  onPointer: ((id: string, phase: ScreenPointerPhase, x: number, y: number) => void) | null = null;
+  onPointer:
+    | ((id: string, phase: ScreenPointerPhase, pointerId: number, x: number, y: number) => void)
+    | null = null;
+  /** Repaint the live canvases every frame, for views that animate. */
+  continuous = false;
 
   readonly info: ScreenInfo = { lastKey: '', roll: '', rolling: false };
 
@@ -379,7 +402,8 @@ export class Screens {
   constructor(private readonly config: ScreenConfig = SCREEN_CONFIG) {
     this.screens = config.screens.map((definition) => new Screen(definition, config));
     for (const screen of this.screens) {
-      screen.onPointer = (phase, x, y) => this.onPointer?.(screen.definition.id, phase, x, y);
+      screen.onPointer = (phase, pointerId, x, y) =>
+        this.onPointer?.(screen.definition.id, phase, pointerId, x, y);
     }
   }
 
@@ -452,7 +476,8 @@ export class Screens {
     }
 
     this.sinceRepaintMs += deltaMs;
-    const repaint = changed || this.sinceRepaintMs >= this.config.repaintIntervalMs;
+    const repaint =
+      changed || this.continuous || this.sinceRepaintMs >= this.config.repaintIntervalMs;
     if (repaint) {
       this.sinceRepaintMs = 0;
     }

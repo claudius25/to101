@@ -1,4 +1,5 @@
-import { ScreenInfo } from '../screens';
+import { ScreenInfo, ScreenPointerPhase } from '../screens';
+import { EinkCard } from '../e-ink/eink-display';
 
 /**
  * A *view* is one full-screen 2D drawing on the glass screen: a chapter, a menu, a
@@ -14,7 +15,16 @@ import { ScreenInfo } from '../screens';
  * Adding a screen: add its id to `ViewId`, write the class, register it in
  * `views/router.ts`.
  */
-export type ViewId = 'chapter-1' | 'chapter-2' | 'settings';
+export type ViewId = 'chapter-1' | 'chapter-2' | 'chapter-tidy-bed' | 'settings';
+
+/** One finger, in canvas pixels. Views that want multi-touch track these by `id`. */
+export interface ViewPointer {
+  /** Browser pointer id; stable from `down` to `up`. */
+  id: number;
+  phase: ScreenPointerPhase;
+  x: number;
+  y: number;
+}
 
 export interface Hotspot {
   /** Id handed back to `ScreenView.press`. */
@@ -79,12 +89,25 @@ export interface ViewNav {
 
 export interface ScreenView {
   readonly id: ViewId;
+  /**
+   * Shown on the e-ink strip while this view is the topmost one that has a briefing,
+   * unless a curfew window is in force. A pushed view without one leaves it alone.
+   */
+  readonly briefing?: EinkCard;
+  /** Repaint every frame instead of on the surface's slow tick. */
+  readonly animated?: boolean;
   /** Called every time the view is put on the stack. */
   enter?(nav: ViewNav): void;
   exit?(): void;
+  /** Advances the view, once per frame, while the screen is live and unblocked. */
+  update?(deltaMs: number, nav: ViewNav): void;
+  /** The screen stopped being live or got blocked: drop anything held. */
+  suspend?(): void;
   paint(frame: ViewFrame): void;
   /** A hotspot registered during paint was tapped. */
   press?(target: string, nav: ViewNav): void;
+  /** Raw multi-touch. Return true to keep the router's tap handling out of the way. */
+  pointer?(event: ViewPointer): boolean;
   /** A device key was pressed. Return true to stop the router handling it. */
   key?(key: string, nav: ViewNav): boolean;
 }

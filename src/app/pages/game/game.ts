@@ -276,15 +276,19 @@ export class Game implements AfterViewInit, OnDestroy {
   private bindViews(): void {
     this.screens.setPainter('eink', (frame) => this.eink.paint(frame));
     this.screens.setPainter('glass', (frame) => this.router.paint(frame));
-    this.screens.onPointer = (id, phase, x, y) => {
+    this.screens.onPointer = (id, phase, pointerId, x, y) => {
       if (id === 'glass') {
-        this.router.pointer(phase, x, y);
+        this.router.pointer(phase, pointerId, x, y);
       }
     };
     this.eink.onReady = () => this.screens.invalidate();
     this.router.onInvalidate = () => this.screens.invalidate();
     this.router.onChange = (path) => this.zone.run(() => this.screenPath.set(path));
-    this.zone.run(() => this.screenPath.set(this.router.path));
+    this.router.onBriefing = (card) => {
+      this.eink.card = card;
+      this.screens.invalidate();
+    };
+    this.router.announce();
   }
 
   private init(): void {
@@ -327,7 +331,10 @@ export class Game implements AfterViewInit, OnDestroy {
       this.router.key(id);
       this.zone.run(() => this.lastKey.set(id));
     };
-    this.screens.onModeChange = (live) => this.zone.run(() => this.screensLive.set(live));
+    this.screens.onModeChange = (live) => {
+      this.router.setLive(live);
+      this.zone.run(() => this.screensLive.set(live));
+    };
     this.bindViews();
 
     this.lastFrameMs = performance.now();
@@ -491,6 +498,8 @@ export class Game implements AfterViewInit, OnDestroy {
 
     const canvas = this.canvasRef().nativeElement;
     const live = this.status() === 'ready' && this.atHomePose();
+    this.router.update(deltaMs);
+    this.screens.continuous = this.router.animated;
     this.screens.update(deltaMs, live, camera, canvas.clientWidth, canvas.clientHeight);
   }
 
@@ -507,7 +516,7 @@ export class Game implements AfterViewInit, OnDestroy {
     if (this.router.blocked !== blocked) {
       this.screens.invalidate();
     }
-    this.router.blocked = blocked;
+    this.router.setBlocked(blocked);
 
     const label = rule ? `${rule.id} · ${rule.from}–${rule.to}` : 'none';
     if (this.curfewRule() !== label) {

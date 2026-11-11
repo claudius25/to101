@@ -1,6 +1,8 @@
-import { ScreenPaintContext } from '../screens';
+import { ScreenPaintContext, ScreenPointerPhase } from '../screens';
+import { EinkCard } from '../e-ink/eink-display';
 import { ChapterOne } from './chapter-one';
 import { ChapterTwo } from './chapter-two';
+import { ChapterTidyBed } from './chapter-tidy-bed';
 import { SettingsView } from './settings';
 import { HitRegistry, ScreenView, ViewFrame, ViewId, ViewNav } from './view';
 
@@ -8,6 +10,7 @@ import { HitRegistry, ScreenView, ViewFrame, ViewId, ViewNav } from './view';
 const FACTORIES: Record<ViewId, () => ScreenView> = {
   'chapter-1': () => new ChapterOne(),
   'chapter-2': () => new ChapterTwo(),
+  'chapter-tidy-bed': () => new ChapterTidyBed(),
   settings: () => new SettingsView(),
 };
 
@@ -30,19 +33,18 @@ export class ScreenRouter implements ViewNav {
   onChange: ((path: string) => void) | null = null;
   /** Asks the surface to repaint now instead of on its next tick. */
   onInvalidate: (() => void) | null = null;
-  /**
-   * While true the glass screen stays dark and swallows every tap and key: the device
-   * is inside a curfew window (see `e-ink/curfew.ts`). Keys still animate, they just do
-   * not reach the views, and the stack is left exactly as it was.
-   */
-  blocked = false;
+  /** Fires with the e-ink message the stack wants shown, or null for none. */
+  onBriefing: ((card: EinkCard | null) => void) | null = null;
 
   private readonly views = new Map<ViewId, ScreenView>();
   private readonly stack: ScreenView[] = [];
   private readonly hits = new HitRegistry();
   private pressed: string | null = null;
+  private live = true;
+  private curfewed = false;
+  private paused = false;
 
-  constructor(initial: ViewId = 'chapter-1') {
+  constructor(initial: ViewId = 'chapter-tidy-bed') {
     this.open(initial);
   }
 
@@ -52,6 +54,16 @@ export class ScreenRouter implements ViewNav {
 
   get depth(): number {
     return this.stack.length;
+  }
+
+  /** True while the glass screen is dark and deaf because of a curfew window. */
+  get blocked(): boolean {
+    return this.curfewed;
+  }
+
+  /** True when the top view wants a repaint every frame. */
+  get animated(): boolean {
+    return !this.paused && this.top.animated === true;
   }
 
   /** Human-readable stack, for the dev panel. */
@@ -82,6 +94,35 @@ export class ScreenRouter implements ViewNav {
       return;
     }
     this.stack.pop()?.exit?.();
+    this.changed();
+  }
+
+  /**
+   * The glass is blocked: the device is inside a curfew window (see `e-ink/curfew.ts`).
+   * The screen goes dark and swallows every tap and key. Keys still animate, they just
+   * do not reach the views, and the stack is left exactly as it was.
+   */
+  setBlocked(blocked: boolean): void {
+    this.curfewed = blocked;
+    this.syncPaused();
+  }
+
+  /** The overlay is live: false once the device is rotated away from its home framing. */
+  setLive(live: boolean): void {
+    this.live = live;
+    this.syncPaused();
+  }
+
+  /** Advances the top view. Does nothing while the screen is paused. */
+  update(deltaMs: number): void {
+    if (this.paused) {
+      return;
+    }
+    this.top.update?.(deltaMs, this);
+  }
+
+  /** Re-emits the current stack, so callbacks wired after construction catch up. */
+  announce(): void {
     this.changed();
   }
 
@@ -116,8 +157,17 @@ export class ScreenRouter implements ViewNav {
   }
 
   /** Pointer phases from the overlay canvas, in canvas pixels. */
-  pointer(phase: 'down' | 'up' | 'cancel', x: number, y: number): void {
-    if (this.blocked) {
+  pointer(phase: ScreenPointerPhase, id: number, x: number, y: number): void {
+    if (this.paused) {
+      return;
+    }
+
+    // A view that handles its own touches (a game, say) takes the whole stream.
+    if (this.top.pointer?.({ id, phase, x, y })) {
+      return;
+    }
+
+    if (phase === 'move') {
       return;
     }
 
@@ -174,6 +224,11 @@ export class ScreenRouter implements ViewNav {
       this.views.set(id, view);
     }
 
+    // The outgoing top stops receiving input, so nothing stays stuck held.
+    if (this.stack.length > 0) {
+      this.top.suspend?.();
+    }
+
     this.stack.push(view);
     view.enter?.(this);
     this.changed();
@@ -182,6 +237,23 @@ export class ScreenRouter implements ViewNav {
   private changed(): void {
     this.invalidate();
     this.onChange?.(this.path);
+    // Topmost briefing wins, so a sheet without one leaves the chapter's message up.
+    const briefing = [...this.stack].reverse().find((view) => view.briefing)?.briefing;
+    this.onBriefing?.(briefing ?? null);
+  }
+
+  /** Paused means no updates, no input, and nothing held. */
+  private syncPaused(): void {
+    const paused = this.curfewed || !this.live;
+    if (paused === this.paused) {
+      return;
+    }
+
+    this.paused = paused;
+    if (paused) {
+      this.pressed = null;
+      this.top.suspend?.();
+    }
   }
 
   private invalidate(): void {

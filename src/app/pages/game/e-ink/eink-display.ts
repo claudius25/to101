@@ -1,5 +1,5 @@
 import { ScreenPaintContext } from '../screens';
-import { CURFEW_CONFIG, CurfewConfig, CurfewRule } from './curfew.config';
+import { CURFEW_CONFIG, CurfewConfig } from './curfew.config';
 import { Curfew } from './curfew';
 import { Span, drawSpans, measureSpans, parseSpans } from './rich-text';
 
@@ -16,6 +16,14 @@ interface Rect {
   y: number;
   width: number;
   height: number;
+}
+
+/** A message for the strip: a few rows of text beside an optional character. */
+export interface EinkCard {
+  /** One entry per line. Any number of rows; the card fits the type to them. */
+  rows: string[];
+  /** Art shown beside the text. Missing or broken files simply leave it out. */
+  character?: string;
 }
 
 /** Tightest box around the non-transparent pixels, so padding in the art is ignored. */
@@ -87,17 +95,20 @@ function seconds(elapsedMs: number): string {
 /**
  * Paints the e-ink strip.
  *
- * Outside a curfew window it is a plain status readout. Inside one it becomes the
- * warning card: the rule's rows beside a character, with the type fitted to however
- * many rows the rule happens to have.
+ * It shows, in order of priority: the curfew card while a window is in force, the card
+ * the current glass view asked for, or a plain dev status readout. Cards are the rule's
+ * rows beside a character, with the type fitted to however many rows there are.
  */
 export class EinkDisplay {
   /** Fired once the character art is decoded, so the surface can repaint. */
   onReady: (() => void) | null = null;
+  /** Message requested by the glass view, shown when no curfew window is in force. */
+  card: EinkCard | null = null;
 
   private image: HTMLImageElement | null = null;
   private imageRect: Rect | null = null;
   private source = '';
+  private failed = false;
 
   constructor(
     private readonly curfew: Curfew,
@@ -105,11 +116,11 @@ export class EinkDisplay {
   ) {}
 
   paint(frame: ScreenPaintContext): void {
-    const rule = this.curfew.active();
+    const card = this.curfew.active() ?? this.card;
     this.paintPaper(frame);
 
-    if (rule) {
-      this.paintRule(frame, rule);
+    if (card) {
+      this.paintCard(frame, card);
     } else {
       this.paintStatus(frame);
     }
@@ -131,7 +142,7 @@ export class EinkDisplay {
     ctx.stroke();
   }
 
-  private paintRule(frame: ScreenPaintContext, rule: CurfewRule): void {
+  private paintCard(frame: ScreenPaintContext, card: EinkCard): void {
     const { ctx, width, height } = frame;
     const unit = height / 100;
     const { padding, gap, characterWidth, lineHeight, maxFontUnits, minFontUnits } =
@@ -142,13 +153,18 @@ export class EinkDisplay {
     const boxWidth = width - unit * padding * 2;
     const boxHeight = height - unit * padding * 2;
 
-    const artWidth = boxWidth * characterWidth;
-    const textX = boxX + artWidth + unit * gap;
-    const textWidth = boxWidth - artWidth - unit * gap;
+    // A card with no art, or art that failed to load, gives the text the whole width.
+    const source = card.character ?? this.config.character;
+    const hasArt = this.prepare(source);
+    const artWidth = hasArt ? boxWidth * characterWidth : 0;
+    const textX = boxX + (hasArt ? artWidth + unit * gap : 0);
+    const textWidth = boxWidth - (hasArt ? artWidth + unit * gap : 0);
 
-    this.paintCharacter(frame, rule, { x: boxX, y: boxY, width: artWidth, height: boxHeight });
+    if (hasArt) {
+      this.paintCharacter(frame, { x: boxX, y: boxY, width: artWidth, height: boxHeight });
+    }
 
-    const rows = rule.rows.map(parseSpans);
+    const rows = card.rows.map(parseSpans);
     const style = (size: number) => ({
       font: (bold: boolean) => `${bold ? 700 : 500} ${size}px ${FONT_FAMILY}`,
       underlineWidth: Math.max(1, size * 0.07),
@@ -162,10 +178,7 @@ export class EinkDisplay {
 
     const byHeight = boxHeight / (rows.length * lineHeight);
     const byWidth = (textWidth / widest) * MEASURE_SIZE;
-    const size = Math.max(
-      unit * minFontUnits,
-      Math.min(unit * maxFontUnits, byHeight, byWidth),
-    );
+    const size = Math.max(unit * minFontUnits, Math.min(unit * maxFontUnits, byHeight, byWidth));
 
     const step = size * lineHeight;
     const top = boxY + Math.max(0, (boxHeight - step * rows.length) / 2);
@@ -178,16 +191,21 @@ export class EinkDisplay {
     });
   }
 
-  /** Fits the art into `box`, bottom aligned, keeping its aspect ratio. */
-  private paintCharacter(frame: ScreenPaintContext, rule: CurfewRule, box: Rect): void {
-    const source = rule.character ?? this.config.character;
+  /** Starts the art loading if needed. False once we know there is nothing to draw. */
+  private prepare(source: string): boolean {
     if (source !== this.source) {
       this.source = source;
       this.image = null;
       this.imageRect = null;
+      this.failed = false;
       this.load(source);
     }
 
+    return !this.failed;
+  }
+
+  /** Fits the art into `box`, bottom aligned, keeping its aspect ratio. */
+  private paintCharacter(frame: ScreenPaintContext, box: Rect): void {
     const image = this.image;
     const rect = this.imageRect;
     if (!image || !rect) {
@@ -214,12 +232,19 @@ export class EinkDisplay {
   private load(source: string): void {
     const image = new Image();
     image.onload = () => {
-      // A later rule may have swapped the art out while this one was decoding.
+      // A later card may have swapped the art out while this one was decoding.
       if (this.source !== source) {
         return;
       }
       this.imageRect = trimAlpha(image);
       this.image = image;
+      this.onReady?.();
+    };
+    image.onerror = () => {
+      if (this.source !== source) {
+        return;
+      }
+      this.failed = true;
       this.onReady?.();
     };
     image.src = source;
