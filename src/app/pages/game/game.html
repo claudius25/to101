@@ -4,6 +4,9 @@
   <div class="game__stage">
     <canvas #canvas class="game__canvas"></canvas>
 
+    <!-- Always on. Never takes a tap: the dev hotspot lives in this same corner. -->
+    <p class="game__fps" aria-hidden="true">{{ fps() }} fps</p>
+
     <!-- One 2D overlay per screen. Positioned and shown/hidden from the render loop. -->
     @for (screen of screenDefs; track screen.id) {
       <canvas #screenCanvas class="game__screen" [attr.data-screen]="screen.id"></canvas>

@@ -10,6 +10,7 @@ import {
   MeshStandardMaterial,
   Object3D,
   ClampToEdgeWrapping,
+  Quaternion,
   SRGBColorSpace,
   Texture,
   TextureLoader,
@@ -17,7 +18,7 @@ import {
 } from 'three';
 
 import { INTRO_CONFIG, IntroConfig } from './intro.config';
-import { findNode } from './rig-utils';
+import { AXES, findNode } from './rig-utils';
 
 /** Phase of the reveal. The game only accepts input once it reads `open`. */
 export type IntroState = 'waiting' | 'flipping' | 'open';
@@ -71,7 +72,7 @@ export class Intro {
   private startTime = 0;
   private duration = INTRO_CONFIG.flip.durationMs;
 
-  private pitchDeg = HALF_TURN;
+  private pitchDeg = 0;
   private rollDeg = 0;
   private liftMetres = 0;
   private blur = 0;
@@ -82,8 +83,16 @@ export class Intro {
   private texture: Texture | null = null;
   private footprint: Footprint | null = null;
 
+  /** The display housing, and the rotation it was modelled in. */
+  private hinge: Object3D | null = null;
+  private readonly hingeBasis = new Quaternion();
+  private readonly hingeSpin = new Quaternion();
+  private hingeDeg = 0;
+
   constructor(private readonly config: IntroConfig = INTRO_CONFIG) {
     this.duration = config.flip.durationMs;
+    // Face-down and tilted, which is where it waits until it is tapped.
+    this.setPose(0, 0);
 
     // Started before the device is even asked for: the artwork is wanted the instant
     // the much heavier GLB lands.
@@ -129,12 +138,33 @@ export class Intro {
     return this.blur;
   }
 
+  /** How far the display housing is standing open, in degrees. */
+  get hingeAngle(): number {
+    return this.hingeDeg;
+  }
+
   /**
-   * Prints the artwork across the device's back and measures it for the hop. Returns
-   * the fragments it missed, in the same shape as the other rig modules.
+   * Prints the artwork across the device's back, measures it for the hop and takes
+   * hold of the display hinge. Returns the fragments it missed, in the same shape as
+   * the other rig modules.
    */
   attach(model: Object3D): string[] {
-    return this.buildPlate(model) ? [] : [this.config.bodyNode];
+    const missing: string[] = [];
+
+    if (!this.buildPlate(model)) {
+      missing.push(this.config.bodyNode);
+    }
+
+    const hinge = findNode(model, this.config.hinge.node);
+    if (hinge) {
+      this.hinge = hinge;
+      this.hingeBasis.copy(hinge.quaternion);
+      this.applyHinge();
+    } else {
+      missing.push(this.config.hinge.node);
+    }
+
+    return missing;
   }
 
   /**
@@ -172,13 +202,14 @@ export class Intro {
     this.setPose(eased, speed);
 
     if (t === 1) {
-      // Snapped rather than left to the arithmetic, so the device lands dead on the
+      // The exact end of the arc, so the housing lands fully open; the two whole
+      // turns and the hop are then snapped flat so the device lands dead on the
       // game's pose. The state is cleared before the callback, so the game is only
       // ever entered once.
+      this.setPose(1, 0);
       this.pitchDeg = 0;
       this.rollDeg = 0;
       this.liftMetres = 0;
-      this.blur = 0;
       this.phase = 'open';
       this.onFinished?.();
     }
@@ -197,17 +228,34 @@ export class Intro {
 
     this.texture?.dispose();
     this.texture = null;
+    this.hinge = null;
   }
 
   /**
    * The pose at a point on the arc. The pitch carries on through a second half-turn
-   * rather than winding back, so both axes finish on a whole turn.
+   * rather than winding back, so both axes finish on a whole turn. The resting tilt
+   * rides on top of it and is unwound by the same curve, so it is gone on landing,
+   * while the display housing swings the other way and finishes standing open.
    */
   private setPose(eased: number, speed: number): void {
-    this.pitchDeg = HALF_TURN * (1 + eased);
+    const { restPitchDeg } = this.config.flip;
+    this.pitchDeg = HALF_TURN * (1 + eased) + restPitchDeg * (1 - eased);
     this.rollDeg = FULL_TURN * eased;
     this.liftMetres = this.hopMetres * Math.sin(Math.PI * eased);
     this.blur = this.config.blur.maxPx * speed;
+    this.hingeDeg = this.config.hinge.openDeg * eased;
+    this.applyHinge();
+  }
+
+  /** Swings the housing on top of whatever rotation it was modelled with. */
+  private applyHinge(): void {
+    const hinge = this.hinge;
+    if (!hinge) {
+      return;
+    }
+
+    this.hingeSpin.setFromAxisAngle(AXES[this.config.hinge.axis], MathUtils.degToRad(this.hingeDeg));
+    hinge.quaternion.copy(this.hingeBasis).multiply(this.hingeSpin);
   }
 
   /**

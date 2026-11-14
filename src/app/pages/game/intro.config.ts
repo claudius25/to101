@@ -10,6 +10,8 @@
  * so the reveal always lands exactly on the framing the game plays at.
  */
 
+import { Axis } from './rig-utils';
+
 export interface IntroConfig {
   /** Device body. Its flat back face is traced to make the printed plate. */
   bodyNode: string;
@@ -37,6 +39,21 @@ export interface IntroConfig {
     durationMs: number;
     /** The full-speed original, replayable from the dev panel for comparison. */
     fullSpeedMs: number;
+    /**
+     * Extra pitch on the resting pose, on top of the half-turn that shows the back.
+     * It tips the printed back towards the camera while the device waits, and unwinds
+     * to nothing as the flip plays, so the landing pose is unaffected.
+     */
+    restPitchDeg: number;
+  };
+  /** The display housing, which stands up out of the chassis as the device opens. */
+  hinge: {
+    /** Group the top part hangs from. It is modelled closed, at 0°. */
+    node: string;
+    /** Axis it swings about, in its own space. */
+    axis: Axis;
+    /** How far it stands open once the reveal lands, in degrees. */
+    openDeg: number;
   };
   /** Hop toward the camera, peaking halfway through the turn. */
   hop: {
@@ -66,6 +83,12 @@ export const INTRO_CONFIG: IntroConfig = {
   flip: {
     durationMs: 4200,
     fullSpeedMs: 1050,
+    restPitchDeg: 44,
+  },
+  hinge: {
+    node: 'Display hinge • wheel axis',
+    axis: 'x',
+    openDeg: 36,
   },
   hop: {
     metres: 0.14,

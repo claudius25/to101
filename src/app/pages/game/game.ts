@@ -54,6 +54,8 @@ const MODEL_URL = 'assets/aluminium-device-game.glb';
 const ELEVATION_LIMIT = 89;
 const SECRET_TAPS = 3;
 const SECRET_TAP_WINDOW_MS = 800;
+/** How long the frame counter averages over before it publishes a number. */
+const FPS_WINDOW_MS = 500;
 
 type Status = 'loading' | 'ready' | 'error';
 type CopyState = 'idle' | 'copied' | 'failed';
@@ -126,6 +128,8 @@ export class Game implements AfterViewInit, OnDestroy {
   protected readonly errorMessage = signal('');
   protected readonly dimensions = signal('');
   protected readonly viewport = signal('');
+  /** Rolling frame rate, shown in the corner of the stage. */
+  protected readonly fps = signal(0);
   protected readonly lastRoll = signal<DiceRoll | null>(null);
   protected readonly lastKey = signal('');
   protected readonly rolling = signal(false);
@@ -149,6 +153,8 @@ export class Game implements AfterViewInit, OnDestroy {
   private model: Object3D | null = null;
   private frameHandle = 0;
   private lastFrameMs = 0;
+  private fpsFrames = 0;
+  private fpsWindowMs = 0;
   /** Last blur written to the canvas, so the style is only touched when it changes. */
   private blurFilter = '';
   /** Height the pivot sits at when nothing is flipping it. */
@@ -515,9 +521,12 @@ export class Game implements AfterViewInit, OnDestroy {
     }
 
     const now = performance.now();
-    // Clamp so a backgrounded tab does not resume with one enormous step.
-    const deltaMs = Math.min(now - this.lastFrameMs, 100);
+    const elapsedMs = now - this.lastFrameMs;
+    // Clamp so a backgrounded tab does not resume with one enormous step. The counter
+    // reads the unclamped time, so a stall is reported as the stall it was.
+    const deltaMs = Math.min(elapsedMs, 100);
     this.lastFrameMs = now;
+    this.trackFps(elapsedMs);
 
     if (this.autoRotate()) {
       const next = this.azimuth() + 0.3;
@@ -536,6 +545,23 @@ export class Game implements AfterViewInit, OnDestroy {
     this.updateScreens(deltaMs, this.activeCamera);
     renderer.render(this.scene, this.activeCamera);
   };
+
+  /**
+   * Averages the frame rate over a short window and publishes it. The render loop runs
+   * outside Angular, so this is the only thing it pushes back per second or so.
+   */
+  private trackFps(elapsedMs: number): void {
+    this.fpsFrames += 1;
+    this.fpsWindowMs += elapsedMs;
+    if (this.fpsWindowMs < FPS_WINDOW_MS) {
+      return;
+    }
+
+    const fps = Math.round((this.fpsFrames * 1000) / this.fpsWindowMs);
+    this.fpsFrames = 0;
+    this.fpsWindowMs = 0;
+    this.zone.run(() => this.fps.set(fps));
+  }
 
   /**
    * The DOM overlays only line up with the screen faces while the device sits at the

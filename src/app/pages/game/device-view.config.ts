@@ -60,10 +60,10 @@ export interface ControlRange {
 
 export const DEVICE_VIEW_CONFIG: DeviceViewConfig = {
   camera: {
-    mode: 'orthographic',
-    fov: 35,
+    mode: 'perspective',
+    fov: 13,
     azimuth: 0,
-    elevation: 89,
+    elevation: 51,
     roll: 0,
     margin: 1,
     autoRotate: false,
