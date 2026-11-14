@@ -88,7 +88,7 @@ export const INTRO_CONFIG: IntroConfig = {
   hinge: {
     node: 'Display hinge • wheel axis',
     axis: 'x',
-    openDeg: 36,
+    openDeg: 37,
   },
   hop: {
     metres: 0.14,
