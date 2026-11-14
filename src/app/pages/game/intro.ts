@@ -130,7 +130,7 @@ export class Intro {
    * Begins the reveal, timed from `now`. Repeated taps while it plays are ignored.
    *
    * `durationMs` overrides the configured run, which is how the dev panel replays the
-   * same flip at the studio's quarter speed.
+   * same flip at full speed.
    */
   start(now: number, durationMs = this.config.flip.durationMs): boolean {
     if (this.phase === 'flipping') {

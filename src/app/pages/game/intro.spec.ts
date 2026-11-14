@@ -3,7 +3,7 @@ import { BoxGeometry, Group, Mesh } from 'three';
 import { INTRO_CONFIG } from './intro.config';
 import { Intro } from './intro';
 
-const { durationMs, previewDurationMs } = INTRO_CONFIG.flip;
+const { durationMs, fullSpeedMs } = INTRO_CONFIG.flip;
 /** Where the wind-up hands over to the settle: half the turn, at peak speed. */
 const HANDOVER_MS = durationMs / 3;
 const DEVICE_LENGTH = 0.105;
@@ -84,17 +84,22 @@ describe('Intro', () => {
     expect(intro.state).toBe('open');
   });
 
-  it('should replay at the quarter-speed preview duration', () => {
-    intro.start(0, previewDurationMs);
-    intro.update(durationMs);
-
-    // Still mid-flip where the full-speed run would already have landed.
-    expect(intro.state).toBe('flipping');
-
-    intro.update(previewDurationMs);
+  it('should replay at the full-speed override', () => {
+    intro.start(0, fullSpeedMs);
+    intro.update(fullSpeedMs);
 
     expect(intro.state).toBe('open');
     expect(intro.pitch).toBe(0);
+
+    // The configured run is the slower one, and is unaffected by the override.
+    intro.start(0);
+    intro.update(fullSpeedMs);
+
+    expect(intro.state).toBe('flipping');
+
+    intro.update(durationMs);
+
+    expect(intro.state).toBe('open');
   });
 
   it('should print the back and scale the hop to the device it measures', () => {

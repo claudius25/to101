@@ -30,10 +30,13 @@ export interface IntroConfig {
     metalness: number;
   };
   flip: {
-    /** Exactly how long one reveal runs, in milliseconds. */
+    /**
+     * Exactly how long one reveal runs, in milliseconds. This is the studio's
+     * quarter-speed pace, which is what the game opens at.
+     */
     durationMs: number;
-    /** The studio's quarter-speed preview, replayable from the dev panel. */
-    previewDurationMs: number;
+    /** The full-speed original, replayable from the dev panel for comparison. */
+    fullSpeedMs: number;
   };
   /** Hop toward the camera, peaking halfway through the turn. */
   hop: {
@@ -61,8 +64,8 @@ export const INTRO_CONFIG: IntroConfig = {
     metalness: 0.05,
   },
   flip: {
-    durationMs: 1050,
-    previewDurationMs: 4200,
+    durationMs: 4200,
+    fullSpeedMs: 1050,
   },
   hop: {
     metres: 0.14,

@@ -238,10 +238,10 @@ export class Game implements AfterViewInit, OnDestroy {
     this.playIntro(INTRO_CONFIG.flip.durationMs);
   }
 
-  /** Dev-panel replay, either at full speed or the studio's quarter-speed preview. */
-  protected replayIntro(quarterSpeed: boolean): void {
-    const { durationMs, previewDurationMs } = INTRO_CONFIG.flip;
-    this.playIntro(quarterSpeed ? previewDurationMs : durationMs);
+  /** Dev-panel replay, either at the pace the game opens at or the full-speed original. */
+  protected replayIntro(fullSpeed: boolean): void {
+    const { durationMs, fullSpeedMs } = INTRO_CONFIG.flip;
+    this.playIntro(fullSpeed ? fullSpeedMs : durationMs);
   }
 
   private playIntro(durationMs: number): void {

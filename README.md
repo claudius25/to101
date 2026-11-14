@@ -74,8 +74,8 @@ The panel also reports the model's bounding-box size and the live canvas resolut
 
 The game has no launcher screen: it opens with the device lying face-down, the launcher
 artwork printed across its back. One click or tap anywhere on the stage flips it open over
-exactly **1050 ms**, and the game goes live the moment it settles.
-[`intro.ts`](./src/app/pages/game/intro.ts) owns the whole thing.
+exactly **4200 ms** — the studio's quarter-speed pace — and the game goes live the moment it
+settles. [`intro.ts`](./src/app/pages/game/intro.ts) owns the whole thing.
 
 - **The print follows the real back.** Rather than laying a rectangle over the metal, `attach`
   walks the body mesh, keeps every triangle sitting on the device's lowest plane and facing
@@ -110,10 +110,10 @@ exactly **1050 ms**, and the game goes live the moment it settles.
   until it finishes.
 
 [`intro.config.ts`](./src/app/pages/game/intro.config.ts) holds the knobs: the artwork and how
-it is printed, the run and preview durations, the hop height and the blur ceiling. The dev
+it is printed, the run and full-speed durations, the hop height and the blur ceiling. The dev
 panel's **Intro** section reports the current phase (`waiting`, `flipping`, `open`) and can
-replay the flip, either at full speed or at the studio's quarter-speed preview (4200 ms) for
-inspecting the arc.
+replay the flip, either at the pace the game opens at or at the full-speed original (1050 ms)
+for comparison.
 
 ## Rolling the dice
 
