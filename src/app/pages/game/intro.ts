@@ -79,7 +79,7 @@ export class Intro {
   /** Peak hop height, once the real device has been measured. */
   private hopMetres = 0;
 
-  private plate: Mesh<BufferGeometry, MeshStandardMaterial> | null = null;
+  private readonly plates: Mesh<BufferGeometry, MeshStandardMaterial>[] = [];
   private texture: Texture | null = null;
   private footprint: Footprint | null = null;
 
@@ -151,9 +151,10 @@ export class Intro {
   attach(model: Object3D): string[] {
     const missing: string[] = [];
 
-    if (!this.buildPlate(model)) {
-      missing.push(this.config.bodyNode);
+    for (const name of [this.config.bodyNode, this.config.displayBodyNode]) {
+      if (name && !this.buildPlate(model, name)) missing.push(name);
     }
+    this.finishPlates(model);
 
     const hinge = findNode(model, this.config.hinge.node);
     if (hinge) {
@@ -218,13 +219,12 @@ export class Intro {
   dispose(): void {
     this.onFinished = null;
 
-    const plate = this.plate;
-    if (plate) {
+    for (const plate of this.plates) {
       plate.removeFromParent();
       plate.geometry.dispose();
       plate.material.dispose();
-      this.plate = null;
     }
+    this.plates.length = 0;
 
     this.texture?.dispose();
     this.texture = null;
@@ -262,8 +262,8 @@ export class Intro {
    * Traces every triangle sitting on the device's lowest plane and facing away from
    * the front, then re-issues them as a plate lifted a hair clear of the metal.
    */
-  private buildPlate(model: Object3D): boolean {
-    const body = findNode(model, this.config.bodyNode);
+  private buildPlate(model: Object3D, name: string): boolean {
+    const body = findNode(model, name);
     if (!body) {
       return false;
     }
@@ -404,9 +404,46 @@ export class Intro {
     plate.raycast = () => undefined;
 
     model.add(plate);
-    this.plate = plate;
-    this.applyArt();
+    this.plates.push(plate);
+    plate.userData['printBody'] = body;
     return true;
+  }
+
+  /** Project one image across both closed halves before binding them to their bodies. */
+  private finishPlates(model: Object3D): void {
+    const bounds = new Box3();
+    const point = new Vector3();
+    for (const plate of this.plates) {
+      const positions = plate.geometry.getAttribute('position');
+      for (let i = 0; i < positions.count; i++) {
+        bounds.expandByPoint(point.fromBufferAttribute(positions, i));
+      }
+    }
+    if (bounds.isEmpty()) return;
+    const width = bounds.max.x - bounds.min.x;
+    const length = bounds.max.z - bounds.min.z;
+    this.footprint = { minX: bounds.min.x, minZ: bounds.min.z, width, length };
+    const { metres, referenceLength } = this.config.hop;
+    this.hopMetres = referenceLength > 0 ? metres * (length / referenceLength) : 0;
+    for (const plate of this.plates) {
+      const positions = plate.geometry.getAttribute('position');
+      const uvs = plate.geometry.getAttribute('uv');
+      for (let i = 0; i < positions.count; i++) {
+        uvs.setXY(
+          i,
+          (positions.getX(i) - bounds.min.x) / width,
+          (positions.getZ(i) - bounds.min.z) / length,
+        );
+      }
+      uvs.needsUpdate = true;
+      const body = plate.userData['printBody'] as Object3D;
+      plate.geometry.applyMatrix4(
+        new Matrix4().copy(body.matrixWorld).invert().multiply(model.matrixWorld),
+      );
+      body.add(plate);
+      delete plate.userData['printBody'];
+    }
+    this.applyArt();
   }
 
   private receiveArt(texture: Texture): void {
@@ -420,12 +457,11 @@ export class Intro {
 
   /** Crops the artwork to the back face, centred, with its proportions intact. */
   private applyArt(): void {
-    const plate = this.plate;
     const texture = this.texture;
     const footprint = this.footprint;
     const image = texture?.image as { width?: number; height?: number } | undefined;
 
-    if (!plate || !texture || !footprint || !image?.width || !image.height) {
+    if (!this.plates.length || !texture || !footprint || !image?.width || !image.height) {
       return;
     }
 
@@ -438,9 +474,11 @@ export class Intro {
     texture.offset.set((1 - scaleU) / 2, (1 - scaleV) / 2);
     texture.needsUpdate = true;
 
-    plate.material.map = texture;
-    plate.material.emissiveMap = texture;
-    plate.material.needsUpdate = true;
-    plate.visible = true;
+    for (const plate of this.plates) {
+      plate.material.map = texture;
+      plate.material.emissiveMap = texture;
+      plate.material.needsUpdate = true;
+      plate.visible = true;
+    }
   }
 }

@@ -113,9 +113,8 @@ describe('Intro', () => {
     const model = new Group();
     model.add(body, hinge);
 
-    expect(intro.attach(model)).toEqual([]);
-    // The traced plate is parented alongside the body it was taken from.
-    expect(model.children.length).toBe(3);
+    expect(intro.attach(model)).toEqual([INTRO_CONFIG.displayBodyNode!]);
+    expect(body.children.length).toBe(1);
 
     const { metres, referenceLength } = INTRO_CONFIG.hop;
     const peak = metres * (DEVICE_LENGTH / referenceLength);
@@ -130,5 +129,38 @@ describe('Intro', () => {
     // The housing is the one thing that stays put once the device has landed.
     expect(intro.hingeAngle).toBe(INTRO_CONFIG.hinge.openDeg);
     expect(hinge.rotation.x).toBeCloseTo((INTRO_CONFIG.hinge.openDeg * Math.PI) / 180, 6);
+  });
+
+  it('should share the artwork across both halves and follow the hinge', () => {
+    const model = new Group();
+    const hinge = new Group();
+    hinge.name = INTRO_CONFIG.hinge.node;
+    const lower = new Mesh(new BoxGeometry(2, 0.2, 2));
+    lower.name = INTRO_CONFIG.bodyNode;
+    lower.position.z = 1;
+    const upper = new Mesh(new BoxGeometry(2, 0.3, 2));
+    upper.name = INTRO_CONFIG.displayBodyNode!;
+    upper.position.z = -1;
+    hinge.add(upper);
+    model.add(lower, hinge);
+
+    expect(intro.attach(model)).toEqual([]);
+    const lowerPrint = lower.children[0] as Mesh;
+    const upperPrint = upper.children[0] as Mesh;
+    const lowerUV = lowerPrint.geometry.getAttribute('uv');
+    const upperUV = upperPrint.geometry.getAttribute('uv');
+    const vs = (uv: typeof lowerUV) => Array.from({ length: uv.count }, (_, i) => uv.getY(i));
+    expect(Math.min(...vs(lowerUV))).toBeCloseTo(0.5);
+    expect(Math.max(...vs(upperUV))).toBeCloseTo(0.5);
+    expect(Math.min(...vs(upperUV))).toBeCloseTo(0);
+    expect(Math.max(...vs(lowerUV))).toBeCloseTo(1);
+
+    intro.start(0);
+    intro.update(durationMs);
+    expect(upperPrint.parent).toBe(upper);
+    expect(lowerPrint.parent).toBe(lower);
+    intro.dispose();
+    expect(upper.children.length).toBe(0);
+    expect(lower.children.length).toBe(0);
   });
 });

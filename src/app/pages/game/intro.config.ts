@@ -15,6 +15,8 @@ import { Axis } from './rig-utils';
 export interface IntroConfig {
   /** Device body. Its flat back face is traced to make the printed plate. */
   bodyNode: string;
+  /** Upper housing, printed separately so it follows the hinge. */
+  displayBodyNode?: string;
   art: {
     url: string;
     /**
@@ -72,6 +74,7 @@ export interface IntroConfig {
 }
 
 export const INTRO_CONFIG: IntroConfig = {
+  displayBodyNode: 'Device • hinged display housing',
   bodyNode: 'Device • recessed 6 mm channel',
   art: {
     url: 'assets/launcher.png',
