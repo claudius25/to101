@@ -78,9 +78,12 @@ exactly **4200 ms** — the studio's quarter-speed pace — and the game goes li
 settles. [`intro.ts`](./src/app/pages/game/intro.ts) owns the whole thing.
 
 - **The print follows the real back.** Rather than laying a rectangle over the metal, `attach`
-  walks the body mesh, keeps every triangle sitting on the device's lowest plane and facing
-  away from the front, and re-issues them as a plate lifted a fraction of a millimetre clear.
-  The artwork therefore stops exactly where the device does, rounded corners included.
+  walks the body mesh and keeps every triangle that faces away from the front and sits within
+  the lowest tenth of the device's thickness, then re-issues them as a plate lifted a fraction
+  of a millimetre clear. Each vertex keeps its own height, so the print follows the chassis
+  where the back steps instead of flattening onto one plane, and it stops exactly where the
+  device does, rounded corners included. Surfaces steeper than 60° are left as bare metal,
+  because a print projected down the thickness would smear across them.
 - **Centred crop, proportions intact.** UVs run `u` along the short axis and `v` along the long
   one; the crop itself is left to the texture's own `repeat`/`offset`, so `launcher.png` fills
   the back and only its overhanging edge is trimmed.

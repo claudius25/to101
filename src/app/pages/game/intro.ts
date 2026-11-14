@@ -22,8 +22,19 @@ import { findNode } from './rig-utils';
 /** Phase of the reveal. The game only accepts input once it reads `open`. */
 export type IntroState = 'waiting' | 'flipping' | 'open';
 
-/** Share of the device thickness a vertex may sit above the lowest one and still count. */
-const BACK_PLANE_TOLERANCE = 0.002;
+/**
+ * How far the back may step up from the device's lowest point and still be printed, as
+ * a share of the device's thickness. The chassis steps by a fraction of a millimetre
+ * where the rear section is deeper; real interior detail starts far higher than this.
+ */
+const BACK_SURFACE_DEPTH = 0.1;
+
+/**
+ * Steepest surface the print will follow, as the Y of a unit normal. The artwork is
+ * projected straight down the thickness, so anything closer to vertical than this
+ * would smear and is left as bare metal.
+ */
+const BACK_FACING_LIMIT = -0.5;
 
 /** Share of the run spent winding up. The remaining two thirds are the settle. */
 const ACCELERATION_SHARE = 1 / 3;
@@ -251,11 +262,13 @@ export class Intro {
     const deviceLength = bounds.max.z - bounds.min.z;
     this.hopMetres = referenceLength > 0 ? metres * (deviceLength / referenceLength) : 0;
 
-    const ceiling = bounds.min.y + Math.max(thickness * BACK_PLANE_TOLERANCE, 1e-7);
+    const ceiling = bounds.min.y + Math.max(thickness * BACK_SURFACE_DEPTH, 1e-7);
     const lift = thickness * this.config.art.lift;
     const faces: number[] = [];
+    const normals: number[] = [];
     const edgeA = new Vector3();
     const edgeB = new Vector3();
+    const normal = new Vector3();
     let minX = Infinity;
     let maxX = -Infinity;
     let minZ = Infinity;
@@ -272,20 +285,25 @@ export class Intro {
           continue;
         }
 
-        // Keep only the outward side, so a coplanar inner floor cannot sneak in.
+        // Only the outward side, and only where it lies flat enough for a print
+        // projected down the thickness to read: a steep wall would smear it.
         const ax = points[a];
         const ay = points[a + 1];
         const az = points[a + 2];
         edgeA.set(points[b] - ax, points[b + 1] - ay, points[b + 2] - az);
         edgeB.set(points[c] - ax, points[c + 1] - ay, points[c + 2] - az);
-        if (edgeA.cross(edgeB).y >= 0) {
+        normal.crossVectors(edgeA, edgeB).normalize();
+        if (!(normal.y < BACK_FACING_LIMIT)) {
           continue;
         }
 
+        // Each vertex keeps its own height, so the print follows the chassis where
+        // the back steps instead of flattening onto the lowest plane.
         for (const corner of [a, b, c]) {
           const x = points[corner];
           const z = points[corner + 2];
-          faces.push(x, bounds.min.y - lift, z);
+          faces.push(x, points[corner + 1] - lift, z);
+          normals.push(normal.x, normal.y, normal.z);
           minX = Math.min(minX, x);
           maxX = Math.max(maxX, x);
           minZ = Math.min(minZ, z);
@@ -309,11 +327,9 @@ export class Intro {
     // u runs along the device's short axis, v along its long axis, both read upright
     // from behind. The centred crop itself is left to the texture's own transform.
     const uvs = new Float32Array((faces.length / 3) * 2);
-    const normals = new Float32Array(faces.length);
     for (let vertex = 0; vertex < faces.length / 3; vertex++) {
       uvs[vertex * 2] = (faces[vertex * 3] - minX) / width;
       uvs[vertex * 2 + 1] = (faces[vertex * 3 + 2] - minZ) / length;
-      normals[vertex * 3 + 1] = -1;
     }
 
     const geometry = new BufferGeometry();
