@@ -30,7 +30,7 @@ Game screens live under `src/app/pages/` and are lazy-loaded from
 
 | Route | Component | Purpose |
 | --- | --- | --- |
-| `/` | [`pages/home`](./src/app/pages/home) | Launcher art (`assets/launcher.png`); tapping it opens the game |
+| `/` | — | Redirects to `/game`; the device is its own launcher |
 | `/game` | [`pages/game`](./src/app/pages/game) | three.js view of `assets/aluminium-device-game.glb` |
 
 The dev panel is hidden by default. **Tap the top-left corner of the screen three times** in
@@ -69,6 +69,51 @@ A collapsible panel is docked to the right edge of the game screen — tap the *
 | Reset view | Restores every control to its default |
 
 The panel also reports the model's bounding-box size and the live canvas resolution.
+
+## Opening flip
+
+The game has no launcher screen: it opens with the device lying face-down, the launcher
+artwork printed across its back. One click or tap anywhere on the stage flips it open over
+exactly **1050 ms**, and the game goes live the moment it settles.
+[`intro.ts`](./src/app/pages/game/intro.ts) owns the whole thing.
+
+- **The print follows the real back.** Rather than laying a rectangle over the metal, `attach`
+  walks the body mesh, keeps every triangle sitting on the device's lowest plane and facing
+  away from the front, and re-issues them as a plate lifted a fraction of a millimetre clear.
+  The artwork therefore stops exactly where the device does, rounded corners included.
+- **Centred crop, proportions intact.** UVs run `u` along the short axis and `v` along the long
+  one; the crop itself is left to the texture's own `repeat`/`offset`, so `launcher.png` fills
+  the back and only its overhanging edge is trimmed.
+- **Self-lit.** Every light in the studio rig faces the front of the device, so the artwork is
+  fed to `emissiveMap` as well as `map`: it carries its own brightness while still picking up
+  a sheen as the device turns.
+- **Two axes and a hop.** The flip turns end over end about the short axis while rolling a full
+  turn about the long one, and lifts toward the camera on a sine arc that peaks halfway
+  through. The pitch carries on through a *second* half-turn rather than winding back, so both
+  axes finish on a whole turn. The angles are *offsets* added to the pose in
+  `device-view.config.ts`, which is what makes the landing pose the game's own framing.
+- **One continuous speed curve.** The first third is a quadratic wind-up; the remaining two
+  thirds are a quartic settle. They meet halfway through the turn at matching value *and*
+  speed, so there is no seam — it reads as a throw that runs out of momentum.
+- **Timed off the frame clock.** `update` takes the render loop's own `performance.now()`
+  timestamp rather than a frame delta, so the run lasts exactly as long as it is configured to
+  however the frames fall. Every offset is snapped to zero on the landing frame, and the state
+  is cleared *before* the game is entered, so entry happens once.
+- **A frame that never breathes.** The launcher opens straight on, so the camera fit is
+  projected from the landing pose rather than the live one. The device is at its largest on
+  screen when it lands, so it turns and hops inside a frame that holds still instead of pulsing
+  with every degree. (The hop runs along the view axis, so it reads as lift under a perspective
+  camera and is invisible under the orthographic default.)
+- **Motion blur.** A CSS blur on the canvas following the same speed curve — it peaks at 3 px
+  a third of the way in and is gone well before the device settles.
+- Taps are dropped while the flip plays, and the keypad, lever and screen overlays stay inert
+  until it finishes.
+
+[`intro.config.ts`](./src/app/pages/game/intro.config.ts) holds the knobs: the artwork and how
+it is printed, the run and preview durations, the hop height and the blur ceiling. The dev
+panel's **Intro** section reports the current phase (`waiting`, `flipping`, `open`) and can
+replay the flip, either at full speed or at the studio's quarter-speed preview (4200 ms) for
+inspecting the arc.
 
 ## Rolling the dice
 

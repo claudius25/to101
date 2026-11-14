@@ -68,6 +68,21 @@
   color: #ff8098;
 }
 
+/**
+ * Transparent hit area over the whole stage while the device waits face-down, so the
+ * first tap anywhere opens it rather than pressing a key on the back of the device.
+ */
+.game__start {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
 .dev-hotspot {
   position: fixed;
   top: 0;

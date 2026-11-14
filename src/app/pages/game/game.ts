@@ -18,6 +18,8 @@ import { Keypad } from './keypad';
 import { Screens } from './screens';
 import { ScreenRouter } from './views/router';
 import { StudioLighting } from './lighting/studio-lighting';
+import { Intro, IntroState } from './intro';
+import { INTRO_CONFIG } from './intro.config';
 import { Curfew, CurfewOverride } from './e-ink/curfew';
 import { CURFEW_CONFIG } from './e-ink/curfew.config';
 import { EinkDisplay } from './e-ink/eink-display';
@@ -31,6 +33,7 @@ import {
 } from './device-view.config';
 import {
   Box3,
+  Euler,
   Group,
   MathUtils,
   Mesh,
@@ -131,11 +134,21 @@ export class Game implements AfterViewInit, OnDestroy {
   protected readonly curfewRules = CURFEW_CONFIG.rules;
   protected readonly curfewOverride = signal<CurfewOverride>('auto');
   protected readonly curfewRule = signal('');
+  /** Phase of the opening flip. The game is only playable once it reads "open". */
+  protected readonly introState = signal<IntroState>('waiting');
+  /** True while the device waits, back to the camera, for the tap that opens it. */
+  protected readonly introPending = computed(
+    () => this.status() === 'ready' && this.introState() === 'waiting',
+  );
 
   private renderer: WebGLRenderer | null = null;
   private model: Object3D | null = null;
   private frameHandle = 0;
   private lastFrameMs = 0;
+  /** Last blur written to the canvas, so the style is only touched when it changes. */
+  private blurFilter = '';
+  /** Height the pivot sits at when nothing is flipping it. */
+  private pivotRestY = 0;
   private tapCount = 0;
   private tapTimer: ReturnType<typeof setTimeout> | null = null;
   /** Finger to key id, so two or three caps can be held down together. */
@@ -147,6 +160,7 @@ export class Game implements AfterViewInit, OnDestroy {
   private readonly screens = new Screens();
   private readonly router = new ScreenRouter();
   private readonly lighting = new StudioLighting();
+  private readonly intro = new Intro();
   private readonly curfew = new Curfew();
   private readonly eink = new EinkDisplay(this.curfew);
   private readonly raycaster = new Raycaster();
@@ -163,6 +177,8 @@ export class Game implements AfterViewInit, OnDestroy {
   private worldCorners: Vector3[] = [];
   private radius = 1;
 
+  /** Device pose without the intro's offsets, which is what the camera frames. */
+  private readonly pose = new Euler();
   private readonly direction = new Vector3();
   private readonly axisX = new Vector3();
   private readonly axisY = new Vector3();
@@ -190,6 +206,7 @@ export class Game implements AfterViewInit, OnDestroy {
     this.router.onInvalidate = null;
     this.eink.onReady = null;
     this.screens.dispose();
+    this.intro.dispose();
 
     if (this.tapTimer !== null) {
       clearTimeout(this.tapTimer);
@@ -211,6 +228,27 @@ export class Game implements AfterViewInit, OnDestroy {
 
   protected onToggle(target: WritableSignal<boolean>, event: Event): void {
     target.set((event.target as HTMLInputElement).checked);
+  }
+
+  /**
+   * Opens the device. Fired by the transparent hit area that covers the stage until
+   * the flip begins; `Intro` drops anything that arrives while it is already running.
+   */
+  protected startIntro(): void {
+    this.playIntro(INTRO_CONFIG.flip.durationMs);
+  }
+
+  /** Dev-panel replay, either at full speed or the studio's quarter-speed preview. */
+  protected replayIntro(quarterSpeed: boolean): void {
+    const { durationMs, previewDurationMs } = INTRO_CONFIG.flip;
+    this.playIntro(quarterSpeed ? previewDurationMs : durationMs);
+  }
+
+  private playIntro(durationMs: number): void {
+    // The same clock the render loop stamps its frames with.
+    if (this.intro.start(performance.now(), durationMs)) {
+      this.introState.set('flipping');
+    }
   }
 
   /** Three taps in the top-left corner, in quick succession, toggle the dev panel. */
@@ -291,6 +329,7 @@ export class Game implements AfterViewInit, OnDestroy {
 
   private init(): void {
     const canvas = this.canvasRef().nativeElement;
+    this.pivotRestY = this.pivot.position.y;
 
     try {
       this.renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -319,6 +358,7 @@ export class Game implements AfterViewInit, OnDestroy {
       this.zone.run(() => this.lastKey.set(id));
     };
     this.keypad.onRelease = (id) => this.router.keyUp(id);
+    this.intro.onFinished = () => this.zone.run(() => this.introState.set('open'));
     this.screens.onModeChange = (live) => {
       this.router.setLive(live);
       this.zone.run(() => this.screensLive.set(live));
@@ -336,6 +376,12 @@ export class Game implements AfterViewInit, OnDestroy {
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
+    // The reveal owns the device until it lands: the tap that starts it comes through
+    // the start overlay, and anything that arrives mid-flip is dropped.
+    if (!this.intro.finished) {
+      return;
+    }
+
     const hit = this.pick(event);
     if (!hit) {
       return;
@@ -434,7 +480,15 @@ export class Game implements AfterViewInit, OnDestroy {
         const missingKeys = this.keypad.attach(model);
         const missingScreens = this.screens.attach(model);
         const missingLights = this.lighting.attach(model, this.pivot);
-        const absent = [...missing, ...missingKeys, ...missingScreens, ...missingLights];
+        // Last, so the print is left out of the shadow pass the rig just set up.
+        const missingBack = this.intro.attach(model);
+        const absent = [
+          ...missing,
+          ...missingKeys,
+          ...missingScreens,
+          ...missingLights,
+          ...missingBack,
+        ];
 
         this.zone.run(() => {
           this.dimensions.set(`${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}`);
@@ -466,7 +520,11 @@ export class Game implements AfterViewInit, OnDestroy {
     }
 
     this.syncSize();
-    this.applyDeviceRotation();
+    // Runs off the frame timestamp rather than the delta, so the reveal lasts exactly
+    // as long as it is configured to no matter how the frames fall.
+    this.intro.update(now);
+    this.applyBlur(this.intro.blurPx);
+    this.applyDevicePose();
     this.machine.update(deltaMs);
     this.keypad.update(deltaMs);
     this.activeCamera = this.updateCamera();
@@ -493,7 +551,7 @@ export class Game implements AfterViewInit, OnDestroy {
     info.rolling = this.rolling();
 
     const canvas = this.canvasRef().nativeElement;
-    const live = this.status() === 'ready' && this.atHomePose();
+    const live = this.status() === 'ready' && this.intro.finished && this.atHomePose();
     this.router.update(deltaMs);
     this.screens.continuous = this.router.animated;
     this.screens.update(deltaMs, live, camera, canvas.clientWidth, canvas.clientHeight);
@@ -542,18 +600,45 @@ export class Game implements AfterViewInit, OnDestroy {
     );
   }
 
-  /** Spins the device itself and re-projects its corners so the fit stays tight. */
-  private applyDeviceRotation(): void {
-    const rotation = this.pivot.rotation;
-    rotation.set(
+  /**
+   * Spins the device itself and re-projects its corners so the fit stays tight.
+   *
+   * The intro's offsets go on the pivot but deliberately not into the projection: the
+   * launcher opens straight on, so the framing is pinned to the landing pose, which is
+   * the largest the device ever reads on screen. The flip therefore turns — and hops —
+   * inside a frame that never breathes.
+   */
+  private applyDevicePose(): void {
+    const pose = this.pose;
+    pose.set(
       MathUtils.degToRad(this.deviceX()),
       MathUtils.degToRad(this.deviceY()),
       MathUtils.degToRad(this.deviceZ()),
     );
 
     for (let index = 0; index < this.localCorners.length; index++) {
-      this.worldCorners[index].copy(this.localCorners[index]).applyEuler(rotation);
+      this.worldCorners[index].copy(this.localCorners[index]).applyEuler(pose);
     }
+
+    // XYZ order, so Z comes first: the roll stays on the device's own long axis while
+    // the flip takes it end over end.
+    this.pivot.rotation.set(
+      pose.x + MathUtils.degToRad(this.intro.pitch),
+      pose.y,
+      pose.z + MathUtils.degToRad(this.intro.roll),
+    );
+    this.pivot.position.y = this.pivotRestY + this.intro.lift;
+  }
+
+  /** Motion blur. Written exactly as the flip reports it, when it changes. */
+  private applyBlur(px: number): void {
+    const filter = px >= 0.005 ? `blur(${px.toFixed(2)}px)` : '';
+    if (filter === this.blurFilter) {
+      return;
+    }
+
+    this.blurFilter = filter;
+    this.canvasRef().nativeElement.style.filter = filter;
   }
 
   /**

@@ -18,6 +18,16 @@
     @if (rigWarning()) {
       <p class="game__status game__status--error">{{ rigWarning() }}</p>
     }
+
+    <!-- Covers the stage while the device waits face-down. One tap flips it open. -->
+    @if (introPending()) {
+      <button
+        type="button"
+        class="game__start"
+        aria-label="Open the device and start the game"
+        (click)="startIntro()"
+      ></button>
+    }
   </div>
 </section>
 
@@ -148,6 +158,15 @@
       [decimals]="ranges.deviceRotation.decimals"
       [(value)]="deviceZ"
     />
+
+    <h2 class="dev__title">Intro</h2>
+
+    <p class="dev__meta">Reveal <b>{{ introState() }}</b></p>
+
+    <div class="dev__actions">
+      <button type="button" class="dev__button" (click)="replayIntro(false)">Replay flip</button>
+      <button type="button" class="dev__button" (click)="replayIntro(true)">¼ speed</button>
+    </div>
 
     <h2 class="dev__title">Dice</h2>
 

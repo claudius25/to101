@@ -1,0 +1,120 @@
+import { BoxGeometry, Group, Mesh } from 'three';
+
+import { INTRO_CONFIG } from './intro.config';
+import { Intro } from './intro';
+
+const { durationMs, previewDurationMs } = INTRO_CONFIG.flip;
+/** Where the wind-up hands over to the settle: half the turn, at peak speed. */
+const HANDOVER_MS = durationMs / 3;
+const DEVICE_LENGTH = 0.105;
+
+describe('Intro', () => {
+  let intro: Intro;
+
+  beforeEach(() => {
+    intro = new Intro();
+  });
+
+  afterEach(() => {
+    intro.dispose();
+  });
+
+  it('should wait face-down and still', () => {
+    intro.update(1000);
+    intro.update(5000);
+
+    expect(intro.state).toBe('waiting');
+    expect(intro.pending).toBeTrue();
+    expect(intro.pitch).toBe(180);
+    expect(intro.roll).toBe(0);
+    expect(intro.lift).toBe(0);
+    expect(intro.blurPx).toBe(0);
+  });
+
+  it('should hand the wind-up over to the settle at half the turn', () => {
+    intro.start(0);
+    intro.update(HANDOVER_MS);
+
+    // eased = 0.5 on both sides of the split, with the blur at its ceiling.
+    expect(intro.pitch).toBeCloseTo(270, 6);
+    expect(intro.roll).toBeCloseTo(180, 6);
+    expect(intro.blurPx).toBeCloseTo(INTRO_CONFIG.blur.maxPx, 6);
+
+    // Past the split the turn only ever slows down.
+    intro.update(HANDOVER_MS + 1);
+    const settling = intro.blurPx;
+    expect(settling).toBeLessThan(INTRO_CONFIG.blur.maxPx);
+
+    intro.update(durationMs - 1);
+    expect(intro.blurPx).toBeLessThan(settling);
+  });
+
+  it('should land dead on the game pose', () => {
+    const entered = jasmine.createSpy('entered');
+    intro.onFinished = entered;
+
+    expect(intro.start(500)).toBeTrue();
+    intro.update(500 + durationMs * 0.6);
+
+    expect(intro.state).toBe('flipping');
+    expect(intro.pitch).toBeGreaterThan(270);
+    expect(intro.pitch).toBeLessThan(360);
+
+    intro.update(500 + durationMs);
+
+    expect(intro.state).toBe('open');
+    expect(intro.finished).toBeTrue();
+    expect(intro.pitch).toBe(0);
+    expect(intro.roll).toBe(0);
+    expect(intro.lift).toBe(0);
+    expect(intro.blurPx).toBe(0);
+    expect(entered).toHaveBeenCalledTimes(1);
+  });
+
+  it('should ignore repeated clicks while the flip plays', () => {
+    intro.start(0);
+    intro.update(durationMs / 2);
+    const halfway = intro.pitch;
+
+    expect(intro.start(0)).toBeFalse();
+    expect(intro.pitch).toBe(halfway);
+
+    intro.update(durationMs);
+
+    expect(intro.state).toBe('open');
+  });
+
+  it('should replay at the quarter-speed preview duration', () => {
+    intro.start(0, previewDurationMs);
+    intro.update(durationMs);
+
+    // Still mid-flip where the full-speed run would already have landed.
+    expect(intro.state).toBe('flipping');
+
+    intro.update(previewDurationMs);
+
+    expect(intro.state).toBe('open');
+    expect(intro.pitch).toBe(0);
+  });
+
+  it('should print the back and scale the hop to the device it measures', () => {
+    const body = new Mesh(new BoxGeometry(0.056, 0.016, DEVICE_LENGTH));
+    body.name = INTRO_CONFIG.bodyNode;
+    const model = new Group();
+    model.add(body);
+
+    expect(intro.attach(model)).toEqual([]);
+    // The traced plate is parented alongside the body it was taken from.
+    expect(model.children.length).toBe(2);
+
+    const { metres, referenceLength } = INTRO_CONFIG.hop;
+    const peak = metres * (DEVICE_LENGTH / referenceLength);
+
+    intro.start(0);
+    intro.update(HANDOVER_MS);
+    expect(intro.lift).toBeCloseTo(peak, 6);
+
+    intro.update(durationMs);
+    expect(intro.lift).toBe(0);
+  });
+});
