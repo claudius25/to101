@@ -95,6 +95,7 @@ export class Game implements AfterViewInit, OnDestroy {
   protected readonly deviceX = signal(DEVICE_VIEW_CONFIG.device.pitch);
   protected readonly deviceY = signal(DEVICE_VIEW_CONFIG.device.yaw);
   protected readonly deviceZ = signal(DEVICE_VIEW_CONFIG.device.roll);
+  protected readonly renderScale = signal(DEVICE_VIEW_CONFIG.render.scale);
   protected readonly autoRotate = signal(DEVICE_VIEW_CONFIG.camera.autoRotate);
   protected readonly panelOpen = signal(false);
   protected readonly status = signal<Status>('loading');
@@ -115,6 +116,9 @@ export class Game implements AfterViewInit, OnDestroy {
       pitch: this.deviceX(),
       yaw: this.deviceY(),
       roll: this.deviceZ(),
+    },
+    render: {
+      scale: this.renderScale(),
     },
   }));
 
@@ -273,7 +277,7 @@ export class Game implements AfterViewInit, OnDestroy {
 
   /** Restores whatever is currently committed to device-view.config.ts. */
   protected reset(): void {
-    const { camera, device } = DEVICE_VIEW_CONFIG;
+    const { camera, device, render } = DEVICE_VIEW_CONFIG;
     this.cameraMode.set(camera.mode);
     this.azimuth.set(camera.azimuth);
     this.elevation.set(camera.elevation);
@@ -284,6 +288,7 @@ export class Game implements AfterViewInit, OnDestroy {
     this.deviceX.set(device.pitch);
     this.deviceY.set(device.yaw);
     this.deviceZ.set(device.roll);
+    this.renderScale.set(render.scale);
   }
 
   protected async copySettings(): Promise<void> {
@@ -658,14 +663,19 @@ export class Game implements AfterViewInit, OnDestroy {
       return;
     }
 
-    const pixelRatio = Math.min(window.devicePixelRatio, 2);
+    // The CSS box stays the same; only the buffer behind it shrinks, and the browser
+    // scales it back up. Fewer fragments is the cheapest frame time there is here,
+    // because the studio rig's rect-area lights are paid for per pixel.
+    const pixelRatio = Math.min(window.devicePixelRatio, 2) * this.renderScale();
     if (
       canvas.width !== Math.floor(width * pixelRatio) ||
       canvas.height !== Math.floor(height * pixelRatio)
     ) {
       renderer.setPixelRatio(pixelRatio);
       renderer.setSize(width, height, false);
-      this.zone.run(() => this.viewport.set(`${canvas.width}×${canvas.height} @${pixelRatio}x`));
+      this.zone.run(() =>
+        this.viewport.set(`${canvas.width}×${canvas.height} @${pixelRatio.toFixed(2)}x`),
+      );
     }
   }
 

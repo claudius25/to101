@@ -64,11 +64,38 @@ A collapsible panel is docked to the right edge of the game screen — tap the *
 | Field of view | Perspective only (10°–90°) |
 | Azimuth / Elevation / Roll | Orbits the camera around the device, always targeting its centre |
 | Fit margin | `1.00×` is the tightest fit; raise it to add breathing room |
+| Render scale | Internal resolution (see below); `1.00×` is native |
 | Auto-rotate azimuth | Continuously spins the camera around the device |
 | Pitch · X / Yaw · Y / Roll · Z | Rotates the device itself about its own centre |
 | Reset view | Restores every control to its default |
 
 The panel also reports the model's bounding-box size and the live canvas resolution.
+
+### Render scale and the cost of the lights
+
+The studio rig lights the device with seven `RectAreaLight`s. Those are the most expensive
+light type three.js has — each one is evaluated per pixel, and on a modest integrated GPU
+each costs roughly **one 60 Hz frame** at a full-screen portrait canvas. Measured on an Intel
+UHD at 440×912, with the tidy-bed view live:
+
+| | Median frame |
+| --- | --- |
+| All seven rect-area lights | 50 ms (~18 fps) |
+| Rect-area lights off | 16.7 ms (vsync capped) |
+| Directional lights off | no change |
+| Shadow casting off | no change |
+| 2D overlay painting stopped | no change |
+
+Frame time tracks pixel count almost exactly, so the render is fragment-bound: the fix is
+fewer pixels, fewer rect-area lights, or both. `render.scale` in
+[`device-view.config.ts`](./src/app/pages/game/device-view.config.ts) is the cheap lever — it
+draws into a smaller buffer and lets the browser scale it up. Halving the pixels roughly
+halves the frame time.
+
+The 2D screen overlays are **not** affected: while the device sits at its home framing they
+are separate DOM canvases drawn at full size and composited on top, so the glass and e-ink
+surfaces stay sharp at any render scale. Only the metal — and the small chassis lettering —
+softens.
 
 ## Opening flip
 

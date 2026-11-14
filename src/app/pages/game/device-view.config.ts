@@ -32,9 +32,23 @@ export interface DeviceRotationConfig {
   roll: number;
 }
 
+export interface RenderConfig {
+  /**
+   * Internal resolution, as a share of the canvas's CSS size (on top of the device
+   * pixel ratio, which is capped at 2). Below 1 the device is drawn into a smaller
+   * buffer and scaled up, which is the cheapest way to buy back frame time: the studio
+   * rig's rect-area lights cost per pixel, and they dominate the frame.
+   *
+   * The 2D screen overlays are separate DOM canvases drawn at full size, so the glass
+   * and e-ink surfaces stay sharp whatever this is set to — only the metal softens.
+   */
+  scale: number;
+}
+
 export interface DeviceViewConfig {
   camera: CameraConfig;
   device: DeviceRotationConfig;
+  render: RenderConfig;
 }
 
 export interface ControlRange {
@@ -59,6 +73,9 @@ export const DEVICE_VIEW_CONFIG: DeviceViewConfig = {
     yaw: 0,
     roll: 0,
   },
+  render: {
+    scale: 0.75,
+  },
 };
 
 /** Bounds and precision for the dev-panel sliders. */
@@ -69,4 +86,5 @@ export const DEVICE_VIEW_RANGES = {
   roll: { min: -180, max: 180, step: 1, decimals: 0 },
   margin: { min: 1, max: 2, step: 0.01, decimals: 2 },
   deviceRotation: { min: -180, max: 180, step: 1, decimals: 0 },
+  renderScale: { min: 0.4, max: 1, step: 0.05, decimals: 2 },
 } satisfies Record<string, ControlRange>;

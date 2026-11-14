@@ -122,6 +122,17 @@
       [(value)]="margin"
     />
 
+    <!-- Internal resolution. The 2D overlays are unaffected, so only the metal softens. -->
+    <app-slider-field
+      label="Render scale"
+      suffix="×"
+      [min]="ranges.renderScale.min"
+      [max]="ranges.renderScale.max"
+      [step]="ranges.renderScale.step"
+      [decimals]="ranges.renderScale.decimals"
+      [(value)]="renderScale"
+    />
+
     <label class="dev__check">
       <input type="checkbox" [checked]="autoRotate()" (change)="onToggle(autoRotate, $event)" />
       Auto-rotate azimuth
