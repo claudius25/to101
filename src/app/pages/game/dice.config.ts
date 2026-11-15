@@ -49,9 +49,14 @@ export interface WheelConfig {
    * (upward-facing) facet. Derived from the GLB geometry — see the defaults below.
    */
   offsetDeg: number;
+  /** Extra rotation toward the camera, in degrees, added to every wheel pose.
+   * Positive tips the readable facet toward the keypad with the current model axes.
+   * Keep offsetDeg for face calibration; tune this for the viewing angle.
+   */
+  viewOffsetDeg: number;
   /** Whether increasing face values run clockwise (1) or anticlockwise (-1) around the drum. */
   faceDirection: Spin;
-  /** Face to show before the first roll. `null` leaves the drum exactly as modelled. */
+  /** Face before the first roll. `null` keeps the modelled face plus viewOffsetDeg. */
   restValue: number | null;
   /** Direction the drum spins while the lever is held. */
   spinDirection: Spin;
@@ -110,6 +115,7 @@ export const DICE_CONFIG: DiceConfig = {
     firstFaceValue: 0,
     // -1080/7: the blank facet sits 154.29° from the upward-facing position.
     offsetDeg: -154.2857,
+    viewOffsetDeg: 23,
     faceDirection: 1,
     restValue: null,
     spinDirection: 1,
@@ -128,6 +134,7 @@ export const DICE_CONFIG: DiceConfig = {
     faceCount: 6,
     firstFaceValue: 1,
     offsetDeg: 60,
+    viewOffsetDeg: 23,
     faceDirection: 1,
     restValue: null,
     spinDirection: 1,

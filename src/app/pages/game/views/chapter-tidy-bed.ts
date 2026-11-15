@@ -4,8 +4,6 @@ import { TIDY_BED_CONFIG, TidyBedConfig, TidyBedTuning, Range } from './tidy-bed
 const LANES = 3;
 /** Where a spider starts, as a fraction of the screen height above the top edge. */
 const SPIDER_START = -0.08;
-/** How far into the zone a spider has fallen when it lands, as a fraction of the zone. */
-const SPIDER_LANDING = 0.26;
 /** Spider artwork width, as a fraction of the screen width. */
 const SPIDER_WIDTH = 0.088;
 /** The artwork is drawn in this box and scaled; keep in step with `drawSpider`. */
@@ -29,24 +27,6 @@ function between(range: Range): number {
   return range.min + Math.random() * (range.max - range.min);
 }
 
-function roundedRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number,
-): void {
-  const r = Math.max(0, Math.min(radius, width / 2, height / 2));
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + width, y, x + width, y + height, r);
-  ctx.arcTo(x + width, y + height, x, y + height, r);
-  ctx.arcTo(x, y + height, x, y, r);
-  ctx.arcTo(x, y, x + width, y, r);
-  ctx.closePath();
-}
-
 /** Fills the screen with the photo, cropping the overflow, like `object-fit: cover`. */
 function drawCover(
   ctx: CanvasRenderingContext2D,
@@ -63,12 +43,8 @@ function drawCover(
 /**
  * The messy bedroom, and the tidy one hiding behind it.
  *
- * Three square zones sit along the bottom of the photo, one per third of its width.
- * Holding a zone wipes the tidy photo in from the top; more fingers wipe faster, and
- * letting go of all of them slides it back up. Spiders drop down the lanes, up to one
- * per lane at a time, and landing on a held zone flashes the screen red. Lift that
- * finger before it arrives. When the wipe reaches the bottom the round is over and the
- * tidy room simply stays on screen.
+ * Three touch points travel with the before/after divider. Hold them to reveal the
+ * tidy room, and lift a finger before a spider reaches its point.
  */
 export class ChapterTidyBed implements ScreenView {
   readonly id = 'chapter-tidy-bed' as const;
@@ -77,10 +53,10 @@ export class ChapterTidyBed implements ScreenView {
   private readonly spiders: Spider[] = [];
   /** Pointer id to lane. -1 means the finger is down but outside every zone. */
   private readonly touches = new Map<number, number>();
-  /** Lanes held down by the device keys rather than by a finger on the glass. */
   private readonly keyLanes = new Set<number>();
+  private readonly pointHitMs = [0, 0, 0];
 
-  private progress = 0;
+  private progress: number;
   private started = false;
   private finished = false;
   private spawnIn = 0;
@@ -95,7 +71,9 @@ export class ChapterTidyBed implements ScreenView {
   private width = 0;
   private height = 0;
 
-  constructor(private readonly config: TidyBedConfig = TIDY_BED_CONFIG) {}
+  constructor(private readonly config: TidyBedConfig = TIDY_BED_CONFIG) {
+    this.progress = config.startProgress;
+  }
 
   /** Idle once the room is revealed: nothing moves, so the surface can slow down. */
   get animated(): boolean {
@@ -120,24 +98,15 @@ export class ChapterTidyBed implements ScreenView {
     this.releaseAll();
   }
 
-  /** The three bottom-row keys stand in for the zones under them. */
   key(key: string): boolean {
     const lane = this.config.laneKeys.indexOf(key);
-    if (lane < 0) {
-      return false;
-    }
-
-    if (!this.finished) {
-      this.keyLanes.add(lane);
-    }
+    if (lane < 0) return false;
+    if (!this.finished) this.keyLanes.add(lane);
     return true;
   }
 
   keyUp(key: string): void {
-    const lane = this.config.laneKeys.indexOf(key);
-    if (lane >= 0) {
-      this.keyLanes.delete(lane);
-    }
+    this.keyLanes.delete(this.config.laneKeys.indexOf(key));
   }
 
   update(deltaMs: number): void {
@@ -149,6 +118,10 @@ export class ChapterTidyBed implements ScreenView {
       this.hitMs = Math.max(0, this.hitMs - deltaMs);
     }
 
+    for (let lane = 0; lane < LANES; lane++) {
+      this.pointHitMs[lane] = Math.max(0, this.pointHitMs[lane] - deltaMs);
+    }
+
     if (this.finished) {
       return;
     }
@@ -158,7 +131,7 @@ export class ChapterTidyBed implements ScreenView {
       this.started = true;
       this.progress = Math.min(1, this.progress + dt * tuning.revealRates[held.size - 1]);
     } else {
-      this.progress = Math.max(0, this.progress - dt * tuning.rollbackRate);
+      this.progress = Math.max(this.config.startProgress, this.progress - dt * tuning.rollbackRate);
     }
 
     if (this.progress >= 1) {
@@ -170,7 +143,7 @@ export class ChapterTidyBed implements ScreenView {
       return;
     }
 
-    if (held.size === 0 && this.progress === 0) {
+    if (held.size === 0 && this.progress === this.config.startProgress) {
       // Rolled all the way back: the board resets and the spiders go away.
       this.spiders.length = 0;
       this.started = false;
@@ -205,8 +178,6 @@ export class ChapterTidyBed implements ScreenView {
     this.width = width;
     this.height = height;
 
-    const zone = Math.min(width / LANES, height);
-    const top = height - zone;
 
     // Square corners: the photo runs edge to edge, unlike the other views.
     ctx.save();
@@ -217,6 +188,12 @@ export class ChapterTidyBed implements ScreenView {
     if (this.before) {
       drawCover(ctx, this.before, width, height);
     }
+
+    ctx.save();
+    ctx.globalAlpha = this.config.beforeTint.opacity;
+    ctx.fillStyle = this.config.beforeTint.color;
+    ctx.fillRect(0, 0, width, height);
+    ctx.restore();
 
     if (this.after && this.progress > 0) {
       ctx.save();
@@ -231,8 +208,7 @@ export class ChapterTidyBed implements ScreenView {
       if (this.progress > 0) {
         this.paintSeam(frame);
       }
-      this.paintSpiders(frame, zone, top);
-      this.paintZones(frame, zone, top);
+      this.paintSpiders(frame);
     }
 
     if (this.hitMs > 0) {
@@ -241,13 +217,15 @@ export class ChapterTidyBed implements ScreenView {
       ctx.fillRect(0, 0, width, height);
     }
 
+    if (!this.finished) this.paintPoints(frame);
     ctx.restore();
   }
 
   private reset(): void {
     this.spiders.length = 0;
     this.releaseAll();
-    this.progress = 0;
+    this.progress = this.config.startProgress;
+    this.pointHitMs.fill(0);
     this.started = false;
     this.finished = false;
     this.hitMs = 0;
@@ -298,19 +276,15 @@ export class ChapterTidyBed implements ScreenView {
     return held;
   }
 
-  /** The zone under a point, or -1 when the finger is anywhere else. */
+  /** Small visible dots have larger, circular touch targets. */
   private laneAt(x: number, y: number): number {
-    const zone = Math.min(this.width / LANES, this.height);
-    if (
-      this.width === 0 ||
-      y < this.height - zone ||
-      y >= this.height ||
-      x < 0 ||
-      x >= this.width
-    ) {
-      return -1;
+    if (!this.width || !this.height) return -1;
+    const radius = this.height * this.config.points.touchRadius;
+    for (let lane = 0; lane < LANES; lane++) {
+      const cx = (lane + 0.5) * this.width / LANES;
+      if (Math.hypot(x - cx, y - this.height * this.progress) <= radius) return lane;
     }
-    return Math.min(LANES - 1, Math.floor((x * LANES) / this.width));
+    return -1;
   }
 
   private updateSpiders(dt: number, held: Set<number>): void {
@@ -337,8 +311,9 @@ export class ChapterTidyBed implements ScreenView {
       const spider = this.spiders[index];
       spider.age += dt;
 
-      if (!spider.crossed && spider.age >= spider.fall) {
+      if (!spider.crossed && this.spiderProgress(spider) >= this.progress) {
         spider.crossed = true;
+        this.pointHitMs[spider.lane] = this.config.hit.durationMs;
         if (held.has(spider.lane)) {
           this.hitMs = this.config.hit.durationMs;
         }
@@ -363,33 +338,29 @@ export class ChapterTidyBed implements ScreenView {
     ctx.fillRect(0, y - thickness / 2, width, thickness);
     ctx.restore();
 
-    // Chevron tab, drawn rather than typed so no font can shift it.
-    const tabWidth = unit * 7;
-    const tabHeight = unit * 5.5;
-    ctx.fillStyle = '#fbf5ff';
-    roundedRect(ctx, width / 2 - tabWidth / 2, y - tabHeight / 2, tabWidth, tabHeight, unit * 1.8);
-    ctx.fill();
-
-    ctx.strokeStyle = '#4d2eb2';
-    ctx.lineWidth = Math.max(1.5, unit * 0.6);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.beginPath();
-    ctx.moveTo(width / 2 - unit * 1.5, y - unit * 0.7);
-    ctx.lineTo(width / 2, y + unit * 0.9);
-    ctx.lineTo(width / 2 + unit * 1.5, y - unit * 0.7);
-    ctx.stroke();
+    ctx.save();
+    ctx.font = `600 ${unit * 3.2}px system-ui, sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = '#21182e';
+    ctx.shadowBlur = unit;
+    ctx.fillText('After', unit * 2, y - unit * 3.2);
+    ctx.fillText('Before', unit * 2, y + unit * 3.2);
+    ctx.restore();
   }
 
-  private paintSpiders(frame: ViewFrame, zone: number, top: number): void {
+  private spiderProgress(spider: Spider): number {
+    return SPIDER_START + (1 - SPIDER_START) * spider.age / spider.fall;
+  }
+
+  private paintSpiders(frame: ViewFrame): void {
     const { ctx, width, height } = frame;
-    const startY = height * SPIDER_START;
-    const landY = top + zone * SPIDER_LANDING;
     const size = width * SPIDER_WIDTH;
 
     for (const spider of this.spiders) {
       const x = (spider.lane + 0.5) * (width / LANES);
-      const y = startY + (landY - startY) * (spider.age / spider.fall);
+      const y = height * this.spiderProgress(spider);
 
       // Silk, straight down from the top edge.
       ctx.fillStyle = 'rgba(56, 38, 59, 0.38)';
@@ -450,42 +421,20 @@ export class ChapterTidyBed implements ScreenView {
     ctx.restore();
   }
 
-  private paintZones(frame: ViewFrame, zone: number, top: number): void {
-    const { ctx, width, unit } = frame;
+  private paintPoints(frame: ViewFrame): void {
+    const { ctx, width, height } = frame;
     const held = this.heldLanes();
-    const laneWidth = width / LANES;
-
+    const radius = height * this.config.points.radius;
     for (let lane = 0; lane < LANES; lane++) {
-      const x = lane * laneWidth;
-      const isHeld = held.has(lane);
-      const threatened = this.spiders.some((s) => s.lane === lane && !s.crossed);
-
-      ctx.fillStyle = isHeld ? 'rgba(103, 60, 230, 0.62)' : 'rgba(45, 35, 67, 0.43)';
-      ctx.fillRect(x, top, laneWidth, zone);
-
-      ctx.lineWidth = Math.max(1, unit * 0.4);
-      ctx.strokeStyle = this.zoneBorder(isHeld, threatened);
-      ctx.strokeRect(
-        x + ctx.lineWidth / 2,
-        top + ctx.lineWidth / 2,
-        laneWidth - ctx.lineWidth,
-        zone - ctx.lineWidth,
-      );
-
-      if (isHeld) {
-        const inset = unit * 1.4;
-        ctx.lineWidth = inset;
-        ctx.strokeStyle = 'rgba(213, 192, 255, 0.79)';
-        ctx.strokeRect(x + inset / 2, top + inset / 2, laneWidth - inset, zone - inset);
-      }
+      const hit = this.pointHitMs[lane];
+      const blink = hit > 0 && Math.floor((this.config.hit.durationMs - hit) / 90) % 2 === 0;
+      ctx.fillStyle = blink ? '#ef2745' : held.has(lane) ? '#35d77d' : '#ffffff';
+      ctx.strokeStyle = 'rgba(30, 24, 40, 0.5)';
+      ctx.lineWidth = Math.max(1, height * 0.003);
+      ctx.beginPath();
+      ctx.arc((lane + 0.5) * width / LANES, height * this.progress, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
     }
-  }
-
-  /** White while held, warm while a spider is on its way, otherwise a faint outline. */
-  private zoneBorder(held: boolean, threatened: boolean): string {
-    if (held) {
-      return '#ffffff';
-    }
-    return threatened ? '#ffb29e' : 'rgba(255, 255, 255, 0.6)';
   }
 }

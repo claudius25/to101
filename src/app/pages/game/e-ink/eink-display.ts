@@ -1,13 +1,11 @@
 import { ScreenPaintContext } from '../screens';
 import { CURFEW_CONFIG, CurfewConfig } from './curfew.config';
 import { Curfew } from './curfew';
-import { Span, drawSpans, measureSpans, parseSpans } from './rich-text';
+import { Span, drawSpans, wrapSpans } from './rich-text';
 
 const INK = '#15150f';
 const PAPER = '#e9e7df';
 const FONT_FAMILY = '"Segoe UI", system-ui, sans-serif';
-/** Widths scale linearly with the font size, so one measurement pass is enough. */
-const MEASURE_SIZE = 100;
 /** Alpha above which a pixel counts as part of the character art. */
 const ALPHA_THRESHOLD = 16;
 
@@ -18,10 +16,12 @@ interface Rect {
   height: number;
 }
 
-/** A message for the strip: a few rows of text beside an optional character. */
+/** Automatically laid out rich text beside an optional character. */
 export interface EinkCard {
-  /** One entry per line. Any number of rows; the card fits the type to them. */
-  rows: string[];
+  /** Rich text: **bold**, *italic*, __underline__, and newline or <br /> breaks. */
+  text: string;
+  /** Preferred font size in units of 1% of the strip height; shrinks only to fit. */
+  fontSize: number;
   /** Art shown beside the text. Missing or broken files simply leave it out. */
   character?: string;
 }
@@ -97,7 +97,7 @@ function seconds(elapsedMs: number): string {
  *
  * It shows, in order of priority: the curfew card while a window is in force, the card
  * the current glass view asked for, or a plain dev status readout. Cards are the rule's
- * rows beside a character, with the type fitted to however many rows there are.
+ * rich text beside a character, wrapped and fitted to the available space.
  */
 export class EinkDisplay {
   /** Fired once the character art is decoded, so the surface can repaint. */
@@ -145,7 +145,7 @@ export class EinkDisplay {
   private paintCard(frame: ScreenPaintContext, card: EinkCard): void {
     const { ctx, width, height } = frame;
     const unit = height / 100;
-    const { padding, gap, characterWidth, lineHeight, maxFontUnits, minFontUnits } =
+    const { padding, gap, characterWidth, lineHeight } =
       this.config.layout;
 
     const boxX = unit * padding;
@@ -164,21 +164,29 @@ export class EinkDisplay {
       this.paintCharacter(frame, { x: boxX, y: boxY, width: artWidth, height: boxHeight });
     }
 
-    const rows = card.rows.map(parseSpans);
     const style = (size: number) => ({
-      font: (bold: boolean) => `${bold ? 700 : 500} ${size}px ${FONT_FAMILY}`,
+      font: (bold: boolean, italic: boolean) =>
+        `${italic ? 'italic ' : ''}${bold ? 700 : 500} ${size}px ${FONT_FAMILY}`,
       underlineWidth: Math.max(1, size * 0.07),
       underlineOffset: size * 0.42,
     });
 
-    let widest = 1;
-    for (const row of rows) {
-      widest = Math.max(widest, measureSpans(ctx, row, style(MEASURE_SIZE)));
+    const preferred = Math.max(1, unit * card.fontSize);
+    let size = preferred;
+    let rows = wrapSpans(ctx, card.text, textWidth, style(size));
+    // Wrapping changes the line count, so fit the whole block rather than its longest row.
+    if (rows.length * size * lineHeight > boxHeight) {
+      let low = 0;
+      let high = preferred;
+      for (let iteration = 0; iteration < 20; iteration++) {
+        const candidate = (low + high) / 2;
+        const wrapped = wrapSpans(ctx, card.text, textWidth, style(candidate));
+        if (wrapped.length * candidate * lineHeight <= boxHeight) low = candidate;
+        else high = candidate;
+      }
+      size = low;
+      rows = wrapSpans(ctx, card.text, textWidth, style(size));
     }
-
-    const byHeight = boxHeight / (rows.length * lineHeight);
-    const byWidth = (textWidth / widest) * MEASURE_SIZE;
-    const size = Math.max(unit * minFontUnits, Math.min(unit * maxFontUnits, byHeight, byWidth));
 
     const step = size * lineHeight;
     const top = boxY + Math.max(0, (boxHeight - step * rows.length) / 2);
@@ -204,7 +212,7 @@ export class EinkDisplay {
     return !this.failed;
   }
 
-  /** Fits the art into `box`, bottom aligned, keeping its aspect ratio. */
+  /** Fits and centers the art in `box`, keeping its aspect ratio. */
   private paintCharacter(frame: ScreenPaintContext, box: Rect): void {
     const image = this.image;
     const rect = this.imageRect;
@@ -223,7 +231,7 @@ export class EinkDisplay {
       rect.width,
       rect.height,
       box.x + (box.width - drawWidth) / 2,
-      box.y + box.height - drawHeight,
+      box.y + (box.height - drawHeight) / 2,
       drawWidth,
       drawHeight,
     );

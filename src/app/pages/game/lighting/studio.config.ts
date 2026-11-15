@@ -9,7 +9,7 @@
  * orientation and only the lights move to fit.
  *
  * The rig is parented to the same frame as the model, so it is rigid in device space:
- * rotate the device and the highlights stay on the keypad, the rollers and the watch.
+ * rotate the device and the highlights stay on the keypad and the rollers.
  */
 
 export type Vec3 = [number, number, number];
@@ -156,15 +156,6 @@ export const STUDIO_PRESET: StudioPreset = {
       height: 0.09,
       part: 'Label • ROLL THE DICE',
       offset: [0.022, 0.23, 0.019],
-    },
-    {
-      id: 'watch',
-      color: '#eaf4ff',
-      intensity: 3.5,
-      width: 0.32,
-      height: 0.055,
-      part: 'Watch • sculpted silver bowl',
-      offset: [-0.1, 0.29, -0.11],
     },
   ],
   accents: [

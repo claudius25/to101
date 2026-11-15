@@ -1,4 +1,4 @@
-import { BoxGeometry, Group, Mesh } from 'three';
+import { Box3, BoxGeometry, Group, Mesh } from 'three';
 
 import { INTRO_CONFIG } from './intro.config';
 import { Intro } from './intro';
@@ -32,6 +32,23 @@ describe('Intro', () => {
     expect(intro.blurPx).toBe(0);
     // The display housing is still folded into the chassis.
     expect(intro.hingeAngle).toBe(0);
+  });
+
+  it('should skip straight to the front-facing landing pose and remain replayable', () => {
+    const finished = jasmine.createSpy('finished');
+    intro.onFinished = finished;
+    intro.skip();
+    expect(intro.state).toBe('open');
+    expect(intro.pitch).toBe(0);
+    expect(intro.roll).toBe(0);
+    expect(intro.lift).toBe(0);
+    expect(intro.blurPx).toBe(0);
+    expect(intro.hingeAngle).toBe(INTRO_CONFIG.hinge.openDeg);
+    intro.skip();
+    intro.update(durationMs);
+    expect(finished).toHaveBeenCalledTimes(1);
+    expect(intro.start(0)).toBeTrue();
+    expect(intro.state).toBe('flipping');
   });
 
   it('should hand the wind-up over to the settle at half the turn', () => {
@@ -145,6 +162,11 @@ describe('Intro', () => {
     model.add(lower, hinge);
 
     expect(intro.attach(model)).toEqual([]);
+    const closedHeight = new Box3().setFromObject(model).max.y;
+    const landing = intro.openBounds(model);
+    expect(landing.max.y).toBeGreaterThan(closedHeight);
+    expect(hinge.rotation.x).toBe(0);
+    expect(intro.state).toBe('waiting');
     const lowerPrint = lower.children[0] as Mesh;
     const upperPrint = upper.children[0] as Mesh;
     const lowerUV = lowerPrint.geometry.getAttribute('uv');

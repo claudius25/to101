@@ -12,6 +12,7 @@ import {
   viewChildren,
 } from '@angular/core';
 import { SliderField } from '../../ui/slider-field/slider-field';
+import { ActivatedRoute } from '@angular/router';
 import { DiceRoll, DiceService } from '../../services/dice.service';
 import { DiceMachine } from './dice-machine';
 import { Keypad } from './keypad';
@@ -36,6 +37,7 @@ import {
   Euler,
   Group,
   MathUtils,
+  Matrix4,
   Mesh,
   Object3D,
   OrthographicCamera,
@@ -171,6 +173,7 @@ export class Game implements AfterViewInit, OnDestroy {
   private readonly router = new ScreenRouter();
   private readonly lighting = new StudioLighting();
   private readonly intro = new Intro();
+  private readonly route = inject(ActivatedRoute);
   private readonly curfew = new Curfew();
   private readonly eink = new EinkDisplay(this.curfew);
   private readonly raycaster = new Raycaster();
@@ -186,6 +189,8 @@ export class Game implements AfterViewInit, OnDestroy {
   private localCorners: Vector3[] = [];
   private worldCorners: Vector3[] = [];
   private radius = 1;
+  private centeredHingeAngle = NaN;
+  private readonly deviceCenter = new Vector3();
 
   /** Device pose without the intro's offsets, which is what the camera frames. */
   private readonly pose = new Euler();
@@ -493,6 +498,17 @@ export class Game implements AfterViewInit, OnDestroy {
         const missingLights = this.lighting.attach(model, this.pivot);
         // Last, so the print is left out of the shadow pass the rig just set up.
         const missingBack = this.intro.attach(model);
+        // Fit the taller, opened housing rather than the original closed chassis.
+        const openBounds = this.intro.openBounds(model);
+        openBounds.translate(openBounds.getCenter(new Vector3()).negate());
+        this.localCorners = boxCorners(openBounds);
+        this.worldCorners = this.localCorners.map((corner) => corner.clone());
+        this.radius = openBounds.getBoundingSphere(new Sphere()).radius || 1;
+        if (this.route.snapshot.queryParamMap.get('skipIntro') === 'true') {
+          this.intro.skip();
+          this.zone.run(() => this.introState.set('open'));
+          this.applyDevicePose();
+        }
         const absent = [
           ...missing,
           ...missingKeys,
@@ -640,6 +656,7 @@ export class Game implements AfterViewInit, OnDestroy {
    * inside a frame that never breathes.
    */
   private applyDevicePose(): void {
+    this.centerDevice();
     const pose = this.pose;
     pose.set(
       MathUtils.degToRad(this.deviceX()),
@@ -658,7 +675,30 @@ export class Game implements AfterViewInit, OnDestroy {
       pose.y,
       pose.z + MathUtils.degToRad(this.intro.roll),
     );
-    this.pivot.position.y = this.pivotRestY + this.intro.lift;
+    this.pivot.position.copy(this.deviceCenter).negate().applyEuler(this.pivot.rotation);
+    this.pivot.position.y += this.pivotRestY + this.intro.lift;
+  }
+
+  /** Recompute only as the housing opens; all bounds are in the pivot's local space. */
+  private centerDevice(): void {
+    const model = this.model;
+    if (!model || this.centeredHingeAngle === this.intro.hingeAngle) return;
+    model.updateWorldMatrix(true, true);
+    const inverse = new Matrix4().copy(this.pivot.matrixWorld).invert();
+    const matrix = new Matrix4();
+    const bounds = new Box3();
+    const partBounds = new Box3();
+    model.traverse((node) => {
+      const mesh = node as Mesh;
+      if (!mesh.isMesh) return;
+      if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+      if (!mesh.geometry.boundingBox) return;
+      matrix.multiplyMatrices(inverse, mesh.matrixWorld);
+      partBounds.copy(mesh.geometry.boundingBox).applyMatrix4(matrix);
+      bounds.union(partBounds);
+    });
+    if (!bounds.isEmpty()) bounds.getCenter(this.deviceCenter);
+    this.centeredHingeAngle = this.intro.hingeAngle;
   }
 
   /** Motion blur. Written exactly as the flip reports it, when it changes. */
@@ -727,9 +767,49 @@ export class Game implements AfterViewInit, OnDestroy {
     this.axisX.crossVectors(this.up, this.axisZ).normalize();
     this.axisY.crossVectors(this.axisZ, this.axisX).normalize();
 
-    return this.cameraMode() === 'orthographic'
+    const camera = this.cameraMode() === 'orthographic'
       ? this.updateOrthographic(aspect)
       : this.updatePerspective(aspect);
+    this.centerProjection(camera, width, height);
+    return camera;
+  }
+
+  /** Center the visible silhouette, whose projected centre differs from the 3D box. */
+  private centerProjection(
+    camera: PerspectiveCamera | OrthographicCamera,
+    width: number,
+    height: number,
+  ): void {
+    camera.clearViewOffset();
+    camera.updateMatrixWorld(true);
+    const model = this.model;
+    if (!model) return;
+    model.updateWorldMatrix(true, true);
+    const point = new Vector3();
+    let minY = Infinity;
+    let maxY = -Infinity;
+    model.traverse((node) => {
+      const mesh = node as Mesh;
+      if (!mesh.isMesh || !mesh.visible) return;
+      if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+      const bounds = mesh.geometry.boundingBox;
+      if (!bounds) return;
+      for (const x of [bounds.min.x, bounds.max.x]) {
+        for (const y of [bounds.min.y, bounds.max.y]) {
+          for (const z of [bounds.min.z, bounds.max.z]) {
+            point.set(x, y, z).applyMatrix4(mesh.matrixWorld);
+            // Keep the deliberate hop instead of cancelling it with camera framing.
+            point.y -= this.intro.lift;
+            point.project(camera);
+            minY = Math.min(minY, point.y);
+            maxY = Math.max(maxY, point.y);
+          }
+        }
+      }
+    });
+    if (Number.isFinite(minY) && Number.isFinite(maxY)) {
+      camera.setViewOffset(width, height, 0, -(minY + maxY) * height / 4, width, height);
+    }
   }
 
   private updatePerspective(aspect: number): PerspectiveCamera {

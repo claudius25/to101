@@ -37,8 +37,8 @@ class Wheel {
 
     if (this.config.restValue !== null) {
       this.angleDeg = this.faceAngle(this.config.restValue);
-      this.apply();
     }
+    this.apply();
   }
 
   /** Resting rotation that puts `value` in the readable position. */
@@ -134,7 +134,10 @@ class Wheel {
       return;
     }
 
-    this.spin.setFromAxisAngle(this.axis, (this.angleDeg * Math.PI) / 180);
+    this.spin.setFromAxisAngle(
+      this.axis,
+      ((this.angleDeg + this.config.viewOffsetDeg) * Math.PI) / 180,
+    );
     this.object.quaternion.copy(this.basis).multiply(this.spin);
   }
 }

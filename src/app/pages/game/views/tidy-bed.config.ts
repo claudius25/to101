@@ -1,5 +1,7 @@
+import type { EinkCard } from '../e-ink/eink-display';
+
 /**
- * "Tidy bed": hold the three zones along the bottom of the photo to wipe the tidy room
+ * "Tidy bed": hold the three points on the divider to wipe the tidy room
  * in from the top, and lift a finger before a spider lands on it.
  *
  * Difficulty lives in `TUNING`, so a whole feel can be swapped by changing
@@ -33,34 +35,36 @@ export interface TidyBedConfig {
   difficulty: TidyBedDifficulty;
   /** Folders under `assets/tidy-bed/`. One is picked at random for each round. */
   sets: string[];
-  /**
-   * Device keys that stand in for the three zones, left to right. Holding one counts
-   * exactly like holding the zone under it, and they combine with real touches.
-   */
+  /** Initial divider position, as a fraction of the screen height. */
+  startProgress: number;
+  /** Physical bottom-row keys, from left to right. */
   laneKeys: [string, string, string];
+  beforeTint: { color: string; opacity: number };
+  /** Visible and touch radii, as fractions of the screen height. */
+  points: { radius: number; touchRadius: number };
   /** File names inside a set folder. */
   beforeFile: string;
   afterFile: string;
   /** Red flash when a spider lands on a held zone. */
   hit: { opacity: number; durationMs: number };
-  /** Rows shown on the e-ink strip while the chapter is on top. */
-  briefing: { rows: string[]; character?: string };
+  /** Rich text shown on the e-ink strip while the chapter is on top. */
+  briefing: EinkCard;
   tuning: Record<TidyBedDifficulty, TidyBedTuning>;
 }
 
 export const TIDY_BED_CONFIG: TidyBedConfig = {
   difficulty: 'normal',
   sets: ['1', '2', '3', '4', '5'],
+  startProgress: 0.25,
   laneKeys: ['left', 'down', 'right'],
+  beforeTint: { color: '#713fba', opacity: 0.3 },
+  points: { radius: 0.016, touchRadius: 0.055 },
   beforeFile: 'before.png',
   afterFile: 'after.jpg',
   hit: { opacity: 0.26, durationMs: 560 },
   briefing: {
-    rows: [
-      'Hold a point to start. More fingers reveal faster.',
-      'Lift a finger before a spider reaches it.',
-      'Releasing all three rolls the reveal back.',
-    ],
+    fontSize: 18,
+    text: `If you want to change the world, start off by **making your bed**.`,
     character: 'assets/e-ink/bed.png',
   },
   tuning: {

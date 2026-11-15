@@ -143,6 +143,18 @@ export class Intro {
     return this.hingeDeg;
   }
 
+  /** Measure the landing pose without starting or advancing the reveal. */
+  openBounds(model: Object3D): Box3 {
+    const angle = this.hingeDeg;
+    this.hingeDeg = this.config.hinge.openDeg;
+    this.applyHinge();
+    const bounds = new Box3().setFromObject(model, true);
+    this.hingeDeg = angle;
+    this.applyHinge();
+    model.updateMatrixWorld(true);
+    return bounds;
+  }
+
   /**
    * Prints the artwork across the device's back, measures it for the hop and takes
    * hold of the display hinge. Returns the fragments it missed, in the same shape as
@@ -186,6 +198,17 @@ export class Intro {
     return true;
   }
 
+  /** Enter the playable front-facing pose immediately, without running the reveal. */
+  skip(): void {
+    if (this.finished) return;
+    this.setPose(1, 0);
+    this.pitchDeg = 0;
+    this.rollDeg = 0;
+    this.liftMetres = 0;
+    this.phase = 'open';
+    this.onFinished?.();
+  }
+
   /** Advances the flip. `now` must come from the same clock as `start`. */
   update(now: number): void {
     if (this.phase !== 'flipping') {
@@ -207,12 +230,7 @@ export class Intro {
       // turns and the hop are then snapped flat so the device lands dead on the
       // game's pose. The state is cleared before the callback, so the game is only
       // ever entered once.
-      this.setPose(1, 0);
-      this.pitchDeg = 0;
-      this.rollDeg = 0;
-      this.liftMetres = 0;
-      this.phase = 'open';
-      this.onFinished?.();
+      this.skip();
     }
   }
 

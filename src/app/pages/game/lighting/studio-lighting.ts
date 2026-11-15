@@ -97,7 +97,7 @@ function findPart(root: Object3D, prefix: string): Object3D | null {
 }
 
 /**
- * The device's studio rig: five RectAreaLight strips placed by hand, two more aimed at
+ * The device's studio rig: five RectAreaLight strips placed by hand, one more aimed at
  * named parts, a glowing "ROLL THE DICE" label, and a three-point directional set.
  *
  * It owns everything about the look — tone mapping, the environment map and its
