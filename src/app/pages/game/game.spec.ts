@@ -28,6 +28,33 @@ describe('Game', () => {
     expect(component).toBeTruthy();
   });
 
+  it('should keep camera centering steady while the intro silhouette rotates', () => {
+    const game = component as unknown as {
+      model: Object3D;
+      landingProjectionPoints: Vector3[];
+      centerProjection(camera: PerspectiveCamera, width: number, height: number): void;
+    };
+    const previous = game.model;
+    const device = new Mesh(new BoxGeometry(1, 3, 1));
+    game.model = device;
+    game.landingProjectionPoints.push(new Vector3(-0.5, -1.5, 0), new Vector3(0.5, 1.5, 1));
+    const camera = new PerspectiveCamera(35, 1, 0.01, 100);
+    camera.position.set(0, 5, 10);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    game.centerProjection(camera, 800, 800);
+    const offset = camera.view!.offsetY;
+    for (const rotation of [0, 1, 2, 3, 4, 5, 6]) {
+      device.rotation.set(rotation, 0, rotation);
+      device.position.y = Math.sin(rotation);
+      game.centerProjection(camera, 800, 800);
+      expect(camera.view!.offsetY).toBeCloseTo(offset, 8);
+    }
+    game.model = previous;
+    game.landingProjectionPoints.length = 0;
+    device.geometry.dispose();
+  });
+
   it('should vertically center the projected device with a tilted perspective camera', () => {
     const device = new Mesh(new BoxGeometry(1, 3, 1));
     device.position.y = 1;

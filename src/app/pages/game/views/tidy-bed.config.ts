@@ -32,6 +32,7 @@ export interface TidyBedTuning {
 }
 
 export interface TidyBedConfig {
+  quickInstruction: string;
   difficulty: TidyBedDifficulty;
   /** Folders under `assets/tidy-bed/`. One is picked at random for each round. */
   sets: string[];
@@ -53,6 +54,7 @@ export interface TidyBedConfig {
 }
 
 export const TIDY_BED_CONFIG: TidyBedConfig = {
+  quickInstruction: 'Press ◀, ▼, ▶ to lower the separator while dodging the spiders',
   difficulty: 'normal',
   sets: ['1', '2', '3', '4', '5'],
   startProgress: 0.25,
@@ -65,7 +67,7 @@ export const TIDY_BED_CONFIG: TidyBedConfig = {
   briefing: {
     fontSize: 18,
     text: `If you want to change the world, start off by **making your bed**.`,
-    character: 'assets/e-ink/bed.png',
+    character: 'assets/e-ink/oldman.png',
   },
   tuning: {
     gentle: {

@@ -191,6 +191,10 @@ export class Game implements AfterViewInit, OnDestroy {
   private radius = 1;
   private centeredHingeAngle = NaN;
   private readonly deviceCenter = new Vector3();
+  /** Landing silhouette used for stable camera framing throughout the reveal. */
+  private readonly landingProjectionPoints: Vector3[] = [];
+  private readonly closedCenter = new Vector3();
+  private readonly openCenter = new Vector3();
 
   /** Device pose without the intro's offsets, which is what the camera frames. */
   private readonly pose = new Euler();
@@ -498,9 +502,13 @@ export class Game implements AfterViewInit, OnDestroy {
         const missingLights = this.lighting.attach(model, this.pivot);
         // Last, so the print is left out of the shadow pass the rig just set up.
         const missingBack = this.intro.attach(model);
+        new Box3().setFromObject(model).getCenter(this.closedCenter);
         // Fit the taller, opened housing rather than the original closed chassis.
-        const openBounds = this.intro.openBounds(model);
-        openBounds.translate(openBounds.getCenter(new Vector3()).negate());
+        const openBounds = this.intro.openBounds(model, this.landingProjectionPoints);
+        const landingCenter = openBounds.getCenter(new Vector3());
+        this.openCenter.copy(landingCenter);
+        for (const point of this.landingProjectionPoints) point.sub(landingCenter);
+        openBounds.translate(landingCenter.negate());
         this.localCorners = boxCorners(openBounds);
         this.worldCorners = this.localCorners.map((corner) => corner.clone());
         this.radius = openBounds.getBoundingSphere(new Sphere()).radius || 1;
@@ -683,6 +691,14 @@ export class Game implements AfterViewInit, OnDestroy {
   private centerDevice(): void {
     const model = this.model;
     if (!model || this.centeredHingeAngle === this.intro.hingeAngle) return;
+    if (this.landingProjectionPoints.length) {
+      // A smooth pivot path avoids bounds-centre kinks as the hinged parts overlap.
+      const openDeg = INTRO_CONFIG.hinge.openDeg;
+      const amount = openDeg === 0 ? 0 : MathUtils.clamp(this.intro.hingeAngle / openDeg, 0, 1);
+      this.deviceCenter.lerpVectors(this.closedCenter, this.openCenter, amount);
+      this.centeredHingeAngle = this.intro.hingeAngle;
+      return;
+    }
     model.updateWorldMatrix(true, true);
     const inverse = new Matrix4().copy(this.pivot.matrixWorld).invert();
     const matrix = new Matrix4();
@@ -788,6 +804,17 @@ export class Game implements AfterViewInit, OnDestroy {
     const point = new Vector3();
     let minY = Infinity;
     let maxY = -Infinity;
+    if (this.landingProjectionPoints.length) {
+      // Project the same landing pose at every animation timestamp. Following the
+      // rotating silhouette introduces a kink whenever its extreme corner changes.
+      for (const landing of this.landingProjectionPoints) {
+        point.copy(landing).applyEuler(this.pose).project(camera);
+        minY = Math.min(minY, point.y);
+        maxY = Math.max(maxY, point.y);
+      }
+      camera.setViewOffset(width, height, 0, -(minY + maxY) * height / 4, width, height);
+      return;
+    }
     model.traverse((node) => {
       const mesh = node as Mesh;
       if (!mesh.isMesh || !mesh.visible) return;

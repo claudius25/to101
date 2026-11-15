@@ -144,11 +144,28 @@ export class Intro {
   }
 
   /** Measure the landing pose without starting or advancing the reveal. */
-  openBounds(model: Object3D): Box3 {
+  openBounds(model: Object3D, projectionPoints?: Vector3[]): Box3 {
     const angle = this.hingeDeg;
     this.hingeDeg = this.config.hinge.openDeg;
     this.applyHinge();
-    const bounds = new Box3().setFromObject(model, true);
+    const bounds = new Box3().setFromObject(model);
+    if (projectionPoints) {
+      projectionPoints.length = 0;
+      model.traverse((node) => {
+        const mesh = node as Mesh;
+        if (!mesh.isMesh) return;
+        if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+        const box = mesh.geometry.boundingBox;
+        if (!box) return;
+        for (const x of [box.min.x, box.max.x]) {
+          for (const y of [box.min.y, box.max.y]) {
+            for (const z of [box.min.z, box.max.z]) {
+              projectionPoints.push(new Vector3(x, y, z).applyMatrix4(mesh.matrixWorld));
+            }
+          }
+        }
+      });
+    }
     this.hingeDeg = angle;
     this.applyHinge();
     model.updateMatrixWorld(true);

@@ -1,4 +1,5 @@
 import { ScreenView, ViewFrame, ViewPointer } from './view';
+import { QuickInstruction } from './components/quick-instruction';
 import { TIDY_BED_CONFIG, TidyBedConfig, TidyBedTuning, Range } from './tidy-bed.config';
 
 const LANES = 3;
@@ -57,6 +58,7 @@ export class ChapterTidyBed implements ScreenView {
   private readonly pointHitMs = [0, 0, 0];
 
   private progress: number;
+  private readonly instruction: QuickInstruction;
   private started = false;
   private finished = false;
   private spawnIn = 0;
@@ -73,6 +75,7 @@ export class ChapterTidyBed implements ScreenView {
 
   constructor(private readonly config: TidyBedConfig = TIDY_BED_CONFIG) {
     this.progress = config.startProgress;
+    this.instruction = new QuickInstruction(config.quickInstruction);
   }
 
   /** Idle once the room is revealed: nothing moves, so the surface can slow down. */
@@ -101,7 +104,10 @@ export class ChapterTidyBed implements ScreenView {
   key(key: string): boolean {
     const lane = this.config.laneKeys.indexOf(key);
     if (lane < 0) return false;
-    if (!this.finished) this.keyLanes.add(lane);
+    if (!this.finished) {
+      this.instruction.dismiss();
+      this.keyLanes.add(lane);
+    }
     return true;
   }
 
@@ -128,6 +134,7 @@ export class ChapterTidyBed implements ScreenView {
 
     const held = this.heldLanes();
     if (held.size > 0) {
+      this.instruction.dismiss();
       this.started = true;
       this.progress = Math.min(1, this.progress + dt * tuning.revealRates[held.size - 1]);
     } else {
@@ -155,12 +162,15 @@ export class ChapterTidyBed implements ScreenView {
   }
 
   pointer(event: ViewPointer): boolean {
+    if (this.instruction.pointer(event)) return true;
     if (this.finished) {
       this.touches.clear();
       return true;
     }
     if (event.phase === 'down') {
-      this.touches.set(event.id, this.laneAt(event.x, event.y));
+      const lane = this.laneAt(event.x, event.y);
+      if (lane >= 0) this.instruction.dismiss();
+      this.touches.set(event.id, lane);
     } else if (event.phase === 'move') {
       if (this.touches.has(event.id)) {
         this.touches.set(event.id, this.laneAt(event.x, event.y));
@@ -218,10 +228,12 @@ export class ChapterTidyBed implements ScreenView {
     }
 
     if (!this.finished) this.paintPoints(frame);
+    this.instruction.paint(frame);
     ctx.restore();
   }
 
   private reset(): void {
+    this.instruction.reset();
     this.spiders.length = 0;
     this.releaseAll();
     this.progress = this.config.startProgress;
@@ -313,8 +325,8 @@ export class ChapterTidyBed implements ScreenView {
 
       if (!spider.crossed && this.spiderProgress(spider) >= this.progress) {
         spider.crossed = true;
-        this.pointHitMs[spider.lane] = this.config.hit.durationMs;
         if (held.has(spider.lane)) {
+          this.pointHitMs[spider.lane] = this.config.hit.durationMs;
           this.hitMs = this.config.hit.durationMs;
         }
       }
@@ -427,7 +439,7 @@ export class ChapterTidyBed implements ScreenView {
     const radius = height * this.config.points.radius;
     for (let lane = 0; lane < LANES; lane++) {
       const hit = this.pointHitMs[lane];
-      const blink = hit > 0 && Math.floor((this.config.hit.durationMs - hit) / 90) % 2 === 0;
+      const blink = held.has(lane) && hit > 0 && Math.floor((this.config.hit.durationMs - hit) / 90) % 2 === 0;
       ctx.fillStyle = blink ? '#ef2745' : held.has(lane) ? '#35d77d' : '#ffffff';
       ctx.strokeStyle = 'rgba(30, 24, 40, 0.5)';
       ctx.lineWidth = Math.max(1, height * 0.003);

@@ -30,7 +30,10 @@ describe('Tidy bed divider controls', () => {
   });
 
   it('should let bottom keys hold points and release them on suspension', () => {
+    const instruction = (view as unknown as { instruction: { visible: boolean } }).instruction;
+    expect(instruction.visible).toBeTrue();
     expect(view.key('left')).toBeTrue();
+    expect(instruction.visible).toBeFalse();
     expect(view.key('down')).toBeTrue();
     expect(view.key('right')).toBeTrue();
     view.update(60);
@@ -56,9 +59,11 @@ describe('Tidy bed divider controls', () => {
     state.started = true;
     state.spawnIn = 10;
     state.spiders.push({ lane: 0, age: 0.28, fall: 1, crossed: false });
+    state.spiders.push({ lane: 1, age: 0.28, fall: 1, crossed: false });
     view.pointer({ id: 1, phase: 'down', x: 100, y: 100 });
     view.update(60);
     expect(state.pointHitMs[0]).toBeGreaterThan(0);
+    expect(state.pointHitMs[1]).toBe(0);
     expect(state.hitMs).toBeGreaterThan(0);
     const arcs = spyOn(frame.ctx, 'arc').and.callThrough();
     view.paint(frame);
@@ -68,6 +73,13 @@ describe('Tidy bed divider controls', () => {
     spyOn(frame.ctx, 'fill').and.callFake(() => { colors.push(String(frame.ctx.fillStyle)); fill(); });
     view.paint(frame);
     expect(colors).toContain('#ef2745');
+    // Releasing a hit point immediately restores white, even during its blink timer.
+    view.pointer({ id: 1, phase: 'up', x: 100, y: 100 });
+    colors.length = 0;
+    view.paint(frame);
+    expect(colors).not.toContain('#ef2745');
+    expect(Array.from(frame.ctx.getImageData(100, 101, 1, 1).data))
+      .toEqual([255, 255, 255, 255]);
     view.update(100);
     colors.length = 0;
     view.paint(frame);
