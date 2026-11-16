@@ -1,4 +1,4 @@
-﻿import { createMouthClean, MouthCleanRuntime } from './mouth-clean-runtime';
+﻿import { createMouthClean, MouthCleanQuality, MouthCleanRuntime } from './mouth-clean-runtime';
 import { ScreenView, ViewFrame, ViewPointer } from './view';
 import { font } from './ui';
 
@@ -13,6 +13,7 @@ export class ChapterMouthClean implements ScreenView {
 
   /** Uniform model scale. The original hero scale was 0.31. */
   readonly heroScale = 0.52;
+  readonly quality: MouthCleanQuality = 'auto';
 
   private runtime: MouthCleanRuntime | null = null;
   private error = '';
@@ -20,7 +21,7 @@ export class ChapterMouthClean implements ScreenView {
   enter(): void {
     if (this.runtime || this.error) return;
     try {
-      this.runtime = createMouthClean({ heroScale: this.heroScale });
+      this.runtime = createMouthClean({ heroScale: this.heroScale, quality: this.quality });
     } catch (error) {
       this.error = error instanceof Error ? error.message : 'Could not start the 3D scene.';
     }
@@ -36,7 +37,7 @@ export class ChapterMouthClean implements ScreenView {
     ctx.fillRect(0, 0, width, height);
     if (this.runtime) {
       this.runtime.render(width, height);
-      ctx.drawImage(this.runtime.canvas, 0, 0);
+      ctx.drawImage(this.runtime.canvas, 0, 0, width, height);
     }
     const status = this.runtime?.status();
     ctx.fillStyle = '#fff3dc';

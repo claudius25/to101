@@ -201,4 +201,29 @@ actions.FightStance.play();
 
 ---
 
+## 8. Performance
+
+Measured on an Intel UHD laptop GPU (1280×551 window, display scaling 150 %):
+
+| | FPS | triangles / frame | draw calls |
+|---|---|---|---|
+| Original build | **1.7** | 1,625,000 | 424 |
+| **Low** preset | **57** (vsync-capped) | 357,000 | 124 |
+| **Medium** preset | **58** (vsync-capped) | 364,000 | 134 |
+| High preset | 24 | 680,000 | 226 |
+
+What made the difference:
+1. **Decimated the mouth** – teeth 17.9k → 1.6k triangles each (40 teeth), tongue/gums/plaque reduced too: whole mouth ~1M → 178k triangles (`MouthScene.glb` 4.7 → 2.9 MB).
+2. **Saliva transmission off** below High – a `transmission` material makes three.js render the whole scene a second time every frame.
+3. **Fewer lights** below High (warm fill, side fill and helmet halo off) – every light is evaluated on every pixel of the big mouth walls.
+4. **Pixel ratio** 1.0 (Medium) / 0.75 (Low) instead of the screen's 1.5–2.0.
+5. **Shadows:** Medium keeps one 1024 px directional shadow; Low uses a cheap soft "blob" shadow under the hero.
+6. **Germs merged** into 3 meshes each (was ~11) → ~170 fewer draw calls.
+
+**Auto mode** (default) starts at Medium (Low on phones / Mali / Adreno GPUs), steps down if FPS < 40 for 2.5 s, steps up if FPS > 54, and remembers levels that were too slow so it doesn't flip back and forth. The ⚙️ button cycles Auto → Low → Medium → High.
+
+**Benchmark:** open the game with `?bench=1` in the URL (served over http) – it measures each preset for ~5 s and POSTs JSON results to `/result` (or logs them to the console).
+
+---
+
 Have fun scrubbing! 🪥✨

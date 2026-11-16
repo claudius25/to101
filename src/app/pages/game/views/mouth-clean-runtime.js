@@ -4,8 +4,9 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-export function createMouthClean({ heroScale = 0.31 } = {}) {
+export function createMouthClean({ heroScale = 0.31, quality = 'auto' } = {}) {
 let loadingMessage = 'Loading mouth world...';
 let flashMessage = '';
 const canvas = document.createElement('canvas');
@@ -55,7 +56,7 @@ controls.enableDamping = true; controls.enabled = false;
 
 scene.add(new THREE.HemisphereLight(0xffd0c8, 0x2a0408, 0.32));
 const key = new THREE.DirectionalLight(0xffe8dc, 0.8);
-key.position.set(14, 16, 6); key.castShadow = true; key.shadow.mapSize.set(2048, 2048);
+key.position.set(14, 16, 6); key.castShadow = true; key.shadow.mapSize.set(1024, 1024);
 Object.assign(key.shadow.camera, { left: -14, right: 14, top: 14, bottom: -14, near: 1, far: 60 });
 key.shadow.bias = -0.0008; key.shadow.normalBias = 0.03;
 scene.add(key, key.target);
@@ -179,19 +180,26 @@ loader.load(MOUTH_URL, (g) => {
 const germMat = toon({ color: '#ffc531' });
 const eyeW = new THREE.MeshBasicMaterial({ color: '#ffffff' });
 const eyeB = new THREE.MeshBasicMaterial({ color: '#111111' });
-const blobGeo = new THREE.SphereGeometry(1, 18, 14), eyeGeo = new THREE.SphereGeometry(1, 12, 10);
+const blobGeo = new THREE.SphereGeometry(1, 12, 9), eyeGeo = new THREE.SphereGeometry(1, 8, 6);
 function makeGerm(size) {
-  const gp = new THREE.Group();
+  // built from many blobs, but merged into 3 meshes (body, eye whites, pupils) → far fewer draw calls
+  const gp = new THREE.Group(), body = [], whites = [], pupils = [], m4 = new THREE.Matrix4();
   const n = 7 + Math.floor(Math.random() * 4);
   for (let i = 0; i < n; i++) {
-    const m = new THREE.Mesh(blobGeo, germMat); const r = size * (0.35 + Math.random() * 0.35);
-    m.scale.setScalar(r); m.position.set((Math.random() - .5) * size * .7, r * 0.8 + Math.random() * size * .5, (Math.random() - .5) * size);
-    m.castShadow = true; gp.add(m);
+    const r = size * (0.35 + Math.random() * 0.35);
+    m4.compose(new THREE.Vector3((Math.random() - .5) * size * .7, r * 0.8 + Math.random() * size * .5, (Math.random() - .5) * size),
+               new THREE.Quaternion(), new THREE.Vector3(r, r, r));
+    body.push(blobGeo.clone().applyMatrix4(m4));
   }
   for (const s of [-1, 1]) {        // grumpy little eyes facing the camera (+X)
-    const w = new THREE.Mesh(eyeGeo, eyeW); w.scale.setScalar(size * 0.17); w.position.set(size * 0.42, size * 0.95, s * size * 0.2); gp.add(w);
-    const p = new THREE.Mesh(eyeGeo, eyeB); p.scale.setScalar(size * 0.08); p.position.set(size * 0.56, size * 0.93, s * size * 0.2); gp.add(p);
+    m4.compose(new THREE.Vector3(size * 0.42, size * 0.95, s * size * 0.2), new THREE.Quaternion(), new THREE.Vector3().setScalar(size * 0.17));
+    whites.push(eyeGeo.clone().applyMatrix4(m4));
+    m4.compose(new THREE.Vector3(size * 0.56, size * 0.93, s * size * 0.2), new THREE.Quaternion(), new THREE.Vector3().setScalar(size * 0.08));
+    pupils.push(eyeGeo.clone().applyMatrix4(m4));
   }
+  const b = new THREE.Mesh(mergeGeometries(body), germMat); b.castShadow = true; gp.add(b);
+  gp.add(new THREE.Mesh(mergeGeometries(whites), eyeW), new THREE.Mesh(mergeGeometries(pupils), eyeB));
+  for (const geometry of [...body, ...whites, ...pupils]) geometry.dispose();
   return gp;
 }
 function spawnGerms() {
@@ -229,6 +237,7 @@ function loadHero() {
     mixer.addEventListener('finished', (e) => { if (e.action === current) { S.busy = false; } });
     S.y = groundBelow(S.z, 4); S.onGround = true;
     play('FightStance', 0);
+    applyQuality();
     placeCamera(true);
 
     flash('Scrub the germs! →');
@@ -457,7 +466,7 @@ for (const m of [mkRing, mkRing2, mkArrow]) { m.renderOrder = 6; marker.add(m); 
 let mkState = 'off', mkT = 0;
 function clickToMove(e) {
   if (!hero) return;
-  const r = { left: 0, top: 0, width: canvas.width, height: canvas.height };                       // exact canvas rect, any DPI / zoom
+  const r = { left: 0, top: 0, width: viewWidth, height: viewHeight };                       // exact canvas rect, any DPI / zoom
   ndc.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   camera.updateMatrixWorld(); pickRay.setFromCamera(ndc, camera);
   // germs first: walk up and poke
@@ -503,9 +512,71 @@ function updateMarker(dt, t) {
   }
 }
 
+// ======================= quality settings (Auto / Low / Medium / High) =======================
+const PRESETS = {
+  low:    { dpr: 0.75, shadows: false, lampShadow: false, transmission: false, ghosts: true, fewLights: true,  shadowRes: 512 },
+  medium: { dpr: 1,    shadows: true,  lampShadow: false, transmission: false, ghosts: true, fewLights: true,  shadowRes: 1024 },
+  high:   { dpr: Math.min(devicePixelRatio, 2), shadows: true, lampShadow: true, transmission: true, ghosts: true, fewLights: false, shadowRes: 2048 },
+};
+const LEVELS = ['low', 'medium', 'high'];
+const Q = { ...PRESETS.medium };
+let qualityMode = quality, autoLevel = 'medium';
+const gpuName = (() => { try { const gl = renderer.getContext(), d = gl.getExtension('WEBGL_debug_renderer_info'); return d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL) : ''; } catch (e) { return ''; } })();
+if (/mali|adreno|powervr|swiftshader/i.test(gpuName) || (navigator.maxTouchPoints > 0 && innerWidth < 900)) autoLevel = 'low';
+const tooSlow = new Set();          // levels Auto tried and found too slow on this device
+// soft fake shadow under the hero, used when real shadows are off
+const blobShadow = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 2, 32, 32, 32); gr.addColorStop(0, 'rgba(0,0,0,0.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.7).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false }));
+  m.renderOrder = 1; scene.add(m); return m;
+})();
+function applyQuality() {
+  const lvl = qualityMode === 'auto' ? autoLevel : qualityMode;
+  Object.assign(Q, PRESETS[lvl]);
+  renderer.setPixelRatio(Q.dpr); resize(viewWidth, viewHeight);
+  renderer.shadowMap.enabled = Q.shadows;
+  key.castShadow = Q.shadows; heroLamp.castShadow = Q.shadows && Q.lampShadow;
+  if (key.shadow.mapSize.x !== Q.shadowRes) { key.shadow.mapSize.set(Q.shadowRes, Q.shadowRes); key.shadow.map?.dispose(); key.shadow.map = null; }
+  blobShadow.visible = !Q.shadows;
+  const sal = matCache.M_Saliva;
+  if (sal) { sal.transmission = Q.transmission ? 1 : 0; sal.opacity = Q.transmission ? 0.95 : 0.42; sal.needsUpdate = true; }
+  for (const g of ghosts) g.visible = Q.ghosts && sideView;
+  warm.visible = fill.visible = lampGlow.visible = !Q.fewLights;
+  scene.traverse(o => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.needsUpdate = true); });
+}
+function setQuality(mode) {
+  if (!['auto', ...LEVELS].includes(mode)) throw new RangeError('Unknown mouth-clean quality: ' + mode);
+  qualityMode = mode;
+  autoT = autoFrames = autoCool = 0;
+  applyQuality();
+}
+function cycleQuality() {
+  const order = ['auto', 'low', 'medium', 'high'];
+  setQuality(order[(order.indexOf(qualityMode) + 1) % order.length]);
+}
+// Auto mode: step quality down if FPS stays low, back up if there's lots of headroom
+let autoT = 0, autoFrames = 0, autoCool = 0;
+function autoTune(dt) {
+  if (qualityMode !== 'auto') return;
+  autoT += dt; autoFrames++; autoCool -= dt;
+  if (autoT < 2.5) return;
+  const fps = autoFrames / autoT; autoT = 0; autoFrames = 0;
+  if (autoCool > 0) return;
+  const i = LEVELS.indexOf(autoLevel);
+  if (fps < 40 && i > 0) { tooSlow.add(autoLevel); autoLevel = LEVELS[i - 1]; applyQuality(); autoCool = 4; }
+  else if (fps > 54 && i < 2 && !tooSlow.has(LEVELS[i + 1])) { autoLevel = LEVELS[i + 1]; applyQuality(); autoCool = 6; }
+}
+
 // ======================= loop =======================
+let viewWidth = 2, viewHeight = 2;
 function resize(width, height) {
-  if (canvas.width === width && canvas.height === height) return;
+  viewWidth = width;
+  viewHeight = height;
+  const ratio = renderer.getPixelRatio();
+  if (canvas.width === Math.floor(width * ratio) && canvas.height === Math.floor(height * ratio)) return;
   renderer.setSize(width, height, false);
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
@@ -602,13 +673,16 @@ function update(deltaMs) {
   }
   throatGlow.intensity = 14 + Math.sin(t * 1.3) * 5;
   updateDrips(dt, t);
+  if (hero) autoTune(deltaMs / 1000);
+  if (hero && blobShadow.visible) blobShadow.position.set(S.x, groundBelow(S.z, S.y + 0.2) + 0.02, S.z);
   updateMarker(dt, t);
   if (uvula) uvula.rotation.x = Math.sin(t * 0.9) * 0.05, uvula.rotation.z = Math.sin(t * 0.7 + 1) * 0.04;
 }
+setQuality(quality);
 return {
-  canvas, update,
+  canvas, update, setQuality,
   render(width, height) { resize(width, height); renderer.render(scene, camera); },
-  status() { return { loading: !hero, message: loadingMessage, cleaned, total: germs.length, flash: flashMessage }; },
+  status() { return { loading: !hero, message: loadingMessage, cleaned, total: germs.length, flash: flashMessage, qualityMode, qualityLevel: qualityMode === 'auto' ? autoLevel : qualityMode }; },
   move(x, y) { clickToMove({ clientX: x, clientY: y }); },
   key(key, down) {
     const mapped = { left: 'arrowleft', right: 'arrowright', up: 'arrowup', down: 'arrowdown' }[key];
@@ -618,16 +692,20 @@ return {
     if (key === 'smash') attack('OverheadStrike');
     if (key === 'jump') jump();
     if (key === 'view') toggleView();
+    if (key === 'quality') cycleQuality();
     if (key === 'zoom-in') zoom(1 / 1.2);
     if (key === 'zoom-out') zoom(1.2);
   },
-  suspend() { keys.clear(); clearTarget(false); },
+  suspend() { keys.clear(); clearTarget(false); autoT = autoFrames = 0; },
   dispose() {
     disposed = true;
     timers.clear();
     controls.dispose();
     mixer?.stopAllAction();
+    scene.traverse((object) => object.shadow?.dispose());
     disposeObject(scene);
+    blobGeo.dispose();
+    eyeGeo.dispose();
     scene.environment?.dispose();
     pmrem.dispose();
     renderer.dispose();

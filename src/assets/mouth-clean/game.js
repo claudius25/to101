@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const $ = (id) => document.getElementById(id);
 // Asset locations (relative to this page). Change these if you move the files.
@@ -23,7 +24,7 @@ const STEP = 0.24;                // biggest bump he can walk up without jumping
 // ======================= renderer / scene =======================
 const canvas = $('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(1);
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.NeutralToneMapping; renderer.toneMappingExposure = 0.92;
 renderer.localClippingEnabled = true;
@@ -39,7 +40,7 @@ controls.enableDamping = true; controls.enabled = false;
 
 scene.add(new THREE.HemisphereLight(0xffd0c8, 0x2a0408, 0.32));
 const key = new THREE.DirectionalLight(0xffe8dc, 0.8);
-key.position.set(14, 16, 6); key.castShadow = true; key.shadow.mapSize.set(2048, 2048);
+key.position.set(14, 16, 6); key.castShadow = true; key.shadow.mapSize.set(1024, 1024);
 Object.assign(key.shadow.camera, { left: -14, right: 14, top: 14, bottom: -14, near: 1, far: 60 });
 key.shadow.bias = -0.0008; key.shadow.normalBias = 0.03;
 scene.add(key, key.target);
@@ -162,19 +163,25 @@ loader.load(MOUTH_URL, (g) => {
 const germMat = toon({ color: '#ffc531' });
 const eyeW = new THREE.MeshBasicMaterial({ color: '#ffffff' });
 const eyeB = new THREE.MeshBasicMaterial({ color: '#111111' });
-const blobGeo = new THREE.SphereGeometry(1, 18, 14), eyeGeo = new THREE.SphereGeometry(1, 12, 10);
+const blobGeo = new THREE.SphereGeometry(1, 12, 9), eyeGeo = new THREE.SphereGeometry(1, 8, 6);
 function makeGerm(size) {
-  const gp = new THREE.Group();
+  // built from many blobs, but merged into 3 meshes (body, eye whites, pupils) → far fewer draw calls
+  const gp = new THREE.Group(), body = [], whites = [], pupils = [], m4 = new THREE.Matrix4();
   const n = 7 + Math.floor(Math.random() * 4);
   for (let i = 0; i < n; i++) {
-    const m = new THREE.Mesh(blobGeo, germMat); const r = size * (0.35 + Math.random() * 0.35);
-    m.scale.setScalar(r); m.position.set((Math.random() - .5) * size * .7, r * 0.8 + Math.random() * size * .5, (Math.random() - .5) * size);
-    m.castShadow = true; gp.add(m);
+    const r = size * (0.35 + Math.random() * 0.35);
+    m4.compose(new THREE.Vector3((Math.random() - .5) * size * .7, r * 0.8 + Math.random() * size * .5, (Math.random() - .5) * size),
+               new THREE.Quaternion(), new THREE.Vector3(r, r, r));
+    body.push(blobGeo.clone().applyMatrix4(m4));
   }
   for (const s of [-1, 1]) {        // grumpy little eyes facing the camera (+X)
-    const w = new THREE.Mesh(eyeGeo, eyeW); w.scale.setScalar(size * 0.17); w.position.set(size * 0.42, size * 0.95, s * size * 0.2); gp.add(w);
-    const p = new THREE.Mesh(eyeGeo, eyeB); p.scale.setScalar(size * 0.08); p.position.set(size * 0.56, size * 0.93, s * size * 0.2); gp.add(p);
+    m4.compose(new THREE.Vector3(size * 0.42, size * 0.95, s * size * 0.2), new THREE.Quaternion(), new THREE.Vector3().setScalar(size * 0.17));
+    whites.push(eyeGeo.clone().applyMatrix4(m4));
+    m4.compose(new THREE.Vector3(size * 0.56, size * 0.93, s * size * 0.2), new THREE.Quaternion(), new THREE.Vector3().setScalar(size * 0.08));
+    pupils.push(eyeGeo.clone().applyMatrix4(m4));
   }
+  const b = new THREE.Mesh(mergeGeometries(body), germMat); b.castShadow = true; gp.add(b);
+  gp.add(new THREE.Mesh(mergeGeometries(whites), eyeW), new THREE.Mesh(mergeGeometries(pupils), eyeB));
   return gp;
 }
 function spawnGerms() {
@@ -211,9 +218,11 @@ function loadHero() {
     mixer.addEventListener('finished', (e) => { if (e.action === current) { S.busy = false; } });
     S.y = groundBelow(S.z, 4); S.onGround = true;
     play('FightStance', 0);
+    applyQuality();
     placeCamera(true);
     $('loading').remove();
     flash('Scrub the germs! →');
+    if (new URLSearchParams(location.search).has('bench')) setTimeout(runBench, 1500);
   }, undefined, (e) => { $('loading').textContent = 'Could not load the hero: ' + (e.message || e); });
 }
 function play(name, fade = 0.2) {
@@ -337,6 +346,7 @@ canvas.addEventListener('pointerup', (e) => {
 canvas.addEventListener('pointercancel', () => { press = null; endDrag(); });
 $('zIn').onclick = () => zoom(1 / 1.2); $('zOut').onclick = () => zoom(1.2);
 $('bFollow').onclick = () => setFollow(!cam.follow); $('bReset').onclick = resetCamera;
+$('bQuality').onclick = () => cycleQuality();
 addEventListener('keydown', (e) => {
   if (e.repeat) return;
   const k = e.key;
@@ -529,11 +539,107 @@ function updateMarker(dt, t) {
   }
 }
 
+// ======================= quality settings (Auto / Low / Medium / High) =======================
+const PRESETS = {
+  low:    { dpr: 0.75, shadows: false, lampShadow: false, transmission: false, ghosts: true, fewLights: true,  shadowRes: 512 },
+  medium: { dpr: 1,    shadows: true,  lampShadow: false, transmission: false, ghosts: true, fewLights: true,  shadowRes: 1024 },
+  high:   { dpr: Math.min(devicePixelRatio, 2), shadows: true, lampShadow: true, transmission: true, ghosts: true, fewLights: false, shadowRes: 2048 },
+};
+const LEVELS = ['low', 'medium', 'high'];
+const Q = { ...PRESETS.medium };
+let qualityMode = 'auto', autoLevel = 'medium';
+const gpuName = (() => { try { const gl = renderer.getContext(), d = gl.getExtension('WEBGL_debug_renderer_info'); return d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL) : ''; } catch (e) { return ''; } })();
+if (/mali|adreno|powervr|swiftshader/i.test(gpuName) || (navigator.maxTouchPoints > 0 && innerWidth < 900)) autoLevel = 'low';
+const tooSlow = new Set();          // levels Auto tried and found too slow on this device
+// soft fake shadow under the hero, used when real shadows are off
+const blobShadow = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 2, 32, 32, 32); gr.addColorStop(0, 'rgba(0,0,0,0.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.7).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false }));
+  m.renderOrder = 1; scene.add(m); return m;
+})();
+function applyQuality() {
+  const lvl = qualityMode === 'auto' ? autoLevel : qualityMode;
+  Object.assign(Q, PRESETS[lvl]);
+  renderer.setPixelRatio(Q.dpr); resize();
+  const shadowChange = renderer.shadowMap.enabled !== Q.shadows;
+  renderer.shadowMap.enabled = Q.shadows;
+  key.castShadow = Q.shadows; heroLamp.castShadow = Q.shadows && Q.lampShadow;
+  if (key.shadow.mapSize.x !== Q.shadowRes) { key.shadow.mapSize.set(Q.shadowRes, Q.shadowRes); key.shadow.map?.dispose(); key.shadow.map = null; }
+  blobShadow.visible = !Q.shadows;
+  const sal = matCache.M_Saliva;
+  if (sal) { sal.transmission = Q.transmission ? 1 : 0; sal.opacity = Q.transmission ? 0.95 : 0.42; sal.needsUpdate = true; }
+  for (const g of ghosts) g.visible = Q.ghosts && sideView;
+  warm.visible = fill.visible = lampGlow.visible = !Q.fewLights;
+  if (shadowChange || true) scene.traverse(o => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.needsUpdate = true); });
+  const b = $('bQuality'); if (b) b.textContent = '⚙️ ' + (qualityMode === 'auto' ? `Auto (${lvl})` : lvl[0].toUpperCase() + lvl.slice(1));
+}
+function cycleQuality() {
+  const order = ['auto', 'low', 'medium', 'high'];
+  qualityMode = order[(order.indexOf(qualityMode) + 1) % order.length]; applyQuality();
+}
+// Auto mode: step quality down if FPS stays low, back up if there's lots of headroom
+let autoT = 0, autoFrames = 0, autoCool = 0;
+function autoTune(dt) {
+  if (qualityMode !== 'auto' || benchRunning) return;
+  autoT += dt; autoFrames++; autoCool -= dt;
+  if (autoT < 2.5) return;
+  const fps = autoFrames / autoT; autoT = 0; autoFrames = 0;
+  if (autoCool > 0) return;
+  const i = LEVELS.indexOf(autoLevel);
+  if (fps < 40 && i > 0) { tooSlow.add(autoLevel); autoLevel = LEVELS[i - 1]; applyQuality(); autoCool = 4; }
+  else if (fps > 54 && i < 2 && !tooSlow.has(LEVELS[i + 1])) { autoLevel = LEVELS[i + 1]; applyQuality(); autoCool = 6; }
+}
+let benchRunning = false;
+const PERF = { upd: 0, ren: 0, n: 0, add(u, r) { this.upd += u; this.ren += r; this.n++; }, reset() { this.upd = this.ren = this.n = 0; } };
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+async function measure(label, ms = 4000) {
+  await sleep(1500); PERF.reset();
+  let frames = 0, run = true; const t0 = performance.now();
+  const tick = () => { if (!run) return; frames++; requestAnimationFrame(tick); }; requestAnimationFrame(tick);
+  await sleep(ms); run = false;
+  const el = performance.now() - t0;
+  return { label, fps: +(frames * 1000 / el).toFixed(1), frame_ms: +(el / frames).toFixed(2),
+    cpu_update_ms: +(PERF.upd / Math.max(1, PERF.n)).toFixed(2), cpu_render_submit_ms: +(PERF.ren / Math.max(1, PERF.n)).toFixed(2),
+    draw_calls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
+    canvas_px: `${renderer.domElement.width}x${renderer.domElement.height}`, dpr: Q.dpr, ...JSON.parse(JSON.stringify(Q)) };
+}
+async function runBench() {
+  flash('⏱️ Measuring performance… (~45 s)');
+  const gl = renderer.getContext(); const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+  const info = { gpu: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER), ua: navigator.userAgent,
+    devicePixelRatio, window: `${innerWidth}x${innerHeight}`, meshes: 0, germ_objects: 0 };
+  scene.traverse(o => { if (o.isMesh) info.meshes++; }); germs.forEach(g => g.g.traverse(o => { if (o.isMesh) info.germ_objects++; }));
+  const out = []; info.auto_level_detected = autoLevel;
+  const scen = [['LOW preset', PRESETS.low], ['MEDIUM preset', PRESETS.medium], ['HIGH preset', PRESETS.high]];
+  benchRunning = true;
+  const prevMode = qualityMode;
+  for (const [label, ch] of scen) { qualityMode = Object.keys(PRESETS).find(k => PRESETS[k] === ch); applyQuality(); out.push(await measure(label)); }
+  qualityMode = prevMode; benchRunning = false; applyQuality();
+  const body = JSON.stringify({ info, results: out }, null, 1);
+  try { await fetch('/result', { method: 'POST', body }); flash('✅ Done – results saved'); } catch (e) { console.log(body); flash('Done (see console)'); }
+}
+
 // ======================= loop =======================
 function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); }
 addEventListener('resize', resize); resize();
 const clock = new THREE.Clock();
+// FPS counter (top-left), refreshed twice a second
+const fpsEl = $('fps'); let fpsFrames = 0, fpsTime = performance.now();
+function updateFps() {
+  fpsFrames++;
+  const now = performance.now(), el = now - fpsTime;
+  if (el >= 500) {
+    const fps = fpsFrames * 1000 / el;
+    fpsEl.textContent = `${Math.round(fps)} FPS · ${(el / fpsFrames).toFixed(1)} ms`;
+    fpsEl.className = 'panel ' + (fps >= 50 ? 'good' : fps >= 30 ? 'ok' : 'bad');
+    fpsFrames = 0; fpsTime = now;
+  }
+}
 renderer.setAnimationLoop(() => {
+  updateFps(); const _t0 = performance.now();
   const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
   if (hero) {
     // screen-right = toward the throat (-Z); "down" on screen = toward the camera (+X)
@@ -620,7 +726,11 @@ renderer.setAnimationLoop(() => {
   }
   throatGlow.intensity = 14 + Math.sin(t * 1.3) * 5;
   updateDrips(dt, t);
+  autoTune(dt);
+  if (hero && blobShadow.visible) blobShadow.position.set(S.x, groundBelow(S.z, S.y + 0.2) + 0.02, S.z);
   updateMarker(dt, t);
   if (uvula) uvula.rotation.x = Math.sin(t * 0.9) * 0.05, uvula.rotation.z = Math.sin(t * 0.7 + 1) * 0.04;
+  const _t1 = performance.now();
   renderer.render(scene, camera);
+  PERF.add(_t1 - _t0, performance.now() - _t1);
 });

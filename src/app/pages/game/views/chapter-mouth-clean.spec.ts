@@ -7,7 +7,7 @@ describe('Mouth clean runtime', () => {
   afterEach(() => runtime?.dispose());
 
   it('loads both models and renders movement and combat', async () => {
-    runtime = createMouthClean();
+    runtime = createMouthClean({ heroScale: 0.52, quality: 'medium' });
     const deadline = performance.now() + 15000;
     while (runtime.status().loading && performance.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 50));
@@ -24,16 +24,28 @@ describe('Mouth clean runtime', () => {
     runtime.render(640, 360);
     expect(runtime.canvas.width).toBe(640);
     expect(runtime.canvas.height).toBe(360);
+    runtime.setQuality('high');
+    runtime.render(640, 360);
+    expect(runtime.status().qualityLevel).toBe('high');
+    expect(runtime.canvas.width).toBe(Math.floor(640 * Math.min(devicePixelRatio, 2)));
+    runtime.setQuality('low');
+    runtime.update(16);
+    runtime.render(640, 360);
+    expect(runtime.status().qualityLevel).toBe('low');
+    expect(runtime.canvas.width).toBe(480);
+    expect(runtime.canvas.height).toBe(270);
     const output = document.createElement('canvas');
     output.width = 640;
     output.height = 360;
     const context = output.getContext('2d')!;
-    context.drawImage(runtime.canvas, 0, 0);
+    context.drawImage(runtime.canvas, 0, 0, 640, 360);
     const pixels = context.getImageData(0, 0, 640, 360).data;
     let brightPixels = 0;
     for (let index = 0; index < pixels.length; index += 4) {
       if (pixels[index] > 50) brightPixels++;
     }
     expect(brightPixels).toBeGreaterThan(100);
-  }, 20000);
+    runtime.setQuality('auto');
+    expect(runtime.status().qualityMode).toBe('auto');
+  }, 60000);
 });
