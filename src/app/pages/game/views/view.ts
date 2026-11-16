@@ -15,7 +15,7 @@ import { EinkCard } from '../e-ink/eink-display';
  * Adding a screen: add its id to `ViewId`, write the class, register it in
  * `views/router.ts`.
  */
-export type ViewId = 'chapter-1' | 'chapter-2' | 'chapter-tidy-bed' | 'settings';
+export type ViewId = 'chapter-mouth-clean' | 'chapter-1' | 'chapter-2' | 'chapter-tidy-bed' | 'settings';
 
 /** One finger, in canvas pixels. Views that want multi-touch track these by `id`. */
 export interface ViewPointer {
@@ -99,6 +99,7 @@ export interface ScreenView {
   /** Called every time the view is put on the stack. */
   enter?(nav: ViewNav): void;
   exit?(): void;
+  dispose?(): void;
   /** Advances the view, once per frame, while the screen is live and unblocked. */
   update?(deltaMs: number, nav: ViewNav): void;
   /** The screen stopped being live or got blocked: drop anything held. */

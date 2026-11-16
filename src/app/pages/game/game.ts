@@ -221,6 +221,7 @@ export class Game implements AfterViewInit, OnDestroy {
     this.keypad.onRelease = null;
     this.keyPointers.clear();
     this.leverPointerId = null;
+    this.router.dispose();
     this.router.onChange = null;
     this.router.onInvalidate = null;
     this.eink.onReady = null;

@@ -1,5 +1,6 @@
 import { ScreenPaintContext, ScreenPointerPhase } from '../screens';
 import { EinkCard } from '../e-ink/eink-display';
+import { ChapterMouthClean } from './chapter-mouth-clean';
 import { ChapterOne } from './chapter-one';
 import { ChapterTwo } from './chapter-two';
 import { ChapterTidyBed } from './chapter-tidy-bed';
@@ -8,6 +9,7 @@ import { HitRegistry, ScreenView, ViewFrame, ViewId, ViewNav } from './view';
 
 /** Register every view here. Instances are created once and reused, so they keep state. */
 const FACTORIES: Record<ViewId, () => ScreenView> = {
+  'chapter-mouth-clean': () => new ChapterMouthClean(),
   'chapter-1': () => new ChapterOne(),
   'chapter-2': () => new ChapterTwo(),
   'chapter-tidy-bed': () => new ChapterTidyBed(),
@@ -44,8 +46,14 @@ export class ScreenRouter implements ViewNav {
   private curfewed = false;
   private paused = false;
 
-  constructor(initial: ViewId = 'chapter-tidy-bed') {
+  constructor(initial: ViewId = 'chapter-mouth-clean') {
     this.open(initial);
+  }
+
+  dispose(): void {
+    for (const view of this.views.values()) view.dispose?.();
+    this.views.clear();
+    this.stack.length = 0;
   }
 
   get current(): ViewId {
