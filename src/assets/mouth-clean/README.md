@@ -125,11 +125,11 @@ const STEP = 0.24;                     // max bump he walks up without jumping
 
 * **Ground:** every frame, raycast straight down at the hero's (x, z) against `Tongue`, `Throat` and `Tooth_lower_*`; snap to the hit when grounded, otherwise apply gravity.
 * **Side camera (2.5D):** perspective, FOV 38°, placed at `+X` (looking toward −X) at `hero + (11.5, 3.5, 0)` by default, following the hero along z/y. Screen-right = toward the throat (−Z). Left edge of the view is clamped to the lips (z ≈ 9.9).
-* **Cut-away:** a clipping plane at `x = heroX + 0.65` removes everything between the camera and the hero (gums, lips, cheek, tongue is **not** cut). The near teeth are drawn again as a 32 % transparent "ghost" copy (`M_Enamel`, `M_Plaque` only).
+* **Cut-away:** a clipping plane at `x = heroX + 0.65` removes everything between the camera and the hero (gums, lips, cheek, tongue is **not** cut). The near side teeth are drawn again as a 32 % transparent "ghost" copy (`M_Enamel`, `M_Plaque` only). The **front teeth** (incisors, laterals, canines: `Tooth_*_[RL][1-3]_*`) are never cut or ghosted – they stay solid.
+* **X-ray outline:** when a solid object hides the hero, a purple (`#b05cff`) outline of him is drawn on top. Two extra passes per hero mesh, drawn after the mouth but before the hero (`renderOrder` 20 → 21 → 30): (1) a stencil mask of his hidden parts (`depthFunc: GreaterDepth`, no colour), (2) a copy inflated along the normals by 0.14 hero units, drawn only where hidden and outside the mask. Both are nudged 0.12 units toward the camera so tiny overlaps (boots in the bumpy tongue) don't trigger it. Needs `new WebGLRenderer({ stencil: true })`.
 * **Attacks:** at the hit frame, check germs within reach in the facing direction (Poke: 0.6 ahead, radius 0.5; Overhead: 0.45 ahead, radius 0.62).
 * **Click / tap to move:** short click (< 6 px, < 450 ms) → raycast from the camera into the ground meshes (or onto a germ). The hero walks there; a pointer pops when he arrives. Drag = pan the camera.
 * **Saliva:** for each `Saliva_Drip_*` the top point becomes the anchor of a strand + teardrop bead that oozes for 9–14 s (max ~78 % of the gap to the floor), drops, snaps back, rests 6–14 s.
-* **Headlamp:** a SpotLight at the helmet (`hero + (0, 0.66, 0)` + 0.2 forward), intensity 70, distance 12, plus an additive cone mesh for the visible beam.
 
 ---
 
@@ -141,10 +141,10 @@ Blender node setups don't all survive glTF, so the game **replaces the mouth mat
 |---|---|---|
 | `M_Enamel` (teeth) | `#fff3dc` | toon |
 | `M_Gum` | `#f0435a` | toon, double-sided |
-| `M_Tongue` | `#ff6f7d` | toon |
+| `M_Tongue` | `#ff6f7d` | toon + surface detail: a 256 px tileable canvas texture (R = small papillae, G = big bumps, B = blotches) projected from above in world space (`xz × 0.32` and `× 0.11`), plus a darker centre groove and a deeper colour toward the throat. Only 2 texture lookups – avoid loop-based noise shaders, they compile very slowly on Intel/ANGLE. |
 | `M_MouthWall` | `#c42638` | toon |
 | `M_Throat` | vertex colour: `#7a0c12` → `#080102` with depth | computed in code from z |
-| `M_Uvula` | `#ff7a86` | toon (the game also slims it to 0.5× width and adds a slow sway) |
+| `M_Uvula` | `#ff7a86` | toon (the game slims it to 0.5× width, 0.81× height and adds a slow sway) |
 | `M_Lip` | `#e8344a` | toon, double-sided |
 | `M_Plaque` | `#ffc531` | toon |
 | `M_Saliva` | clear, IOR 1.34, transmission 1, roughness 0.04, clearcoat 1, pink attenuation `#ffd6d6` | physically-based for a wet look |
@@ -208,19 +208,21 @@ Measured on an Intel UHD laptop GPU (1280×551 window, display scaling 150 %):
 | | FPS | triangles / frame | draw calls |
 |---|---|---|---|
 | Original build | **1.7** | 1,625,000 | 424 |
-| **Low** preset | **57** (vsync-capped) | 357,000 | 124 |
-| **Medium** preset | **58** (vsync-capped) | 364,000 | 134 |
-| High preset | 24 | 680,000 | 226 |
+| **Low** preset | **60** (vsync max) | 358,000 | 121 |
+| **Medium** preset | **60** (vsync max) | 366,000 | 134 |
+| **High** preset | ~46 | 436,000 | 186 |
+| Ultra preset (refractive saliva) | ~32 | 680,000 | 220 |
 
 What made the difference:
 1. **Decimated the mouth** – teeth 17.9k → 1.6k triangles each (40 teeth), tongue/gums/plaque reduced too: whole mouth ~1M → 178k triangles (`MouthScene.glb` 4.7 → 2.9 MB).
-2. **Saliva transmission off** below High – a `transmission` material makes three.js render the whole scene a second time every frame.
-3. **Fewer lights** below High (warm fill, side fill and helmet halo off) – every light is evaluated on every pixel of the big mouth walls.
-4. **Pixel ratio** 1.0 (Medium) / 0.75 (Low) instead of the screen's 1.5–2.0.
-5. **Shadows:** Medium keeps one 1024 px directional shadow; Low uses a cheap soft "blob" shadow under the hero.
+2. **No refractive saliva** except on Ultra – a `transmission` material makes three.js render the whole scene a second time every frame. High uses a glossy see-through saliva instead.
+3. **Fewer lights** on Low/Medium (warm + side fill off, replaced by a brighter hemisphere light – nearly free). The hero headlamp spotlight, halo and beam were removed.
+4. **Pixel ratio** 0.75 (Low) / 1.0 (Medium) / ≤1.5 (High) instead of the screen's 1.5–2.0.
+5. **Shadows:** Medium/High use one directional shadow map; Low uses a cheap soft "blob" shadow under the hero.
 6. **Germs merged** into 3 meshes each (was ~11) → ~170 fewer draw calls.
+7. **Fewer raycasts:** the blob shadow reuses the ground hit from the gravity step (game-logic time 6–11 ms → ~3.3 ms per frame).
 
-**Auto mode** (default) starts at Medium (Low on phones / Mali / Adreno GPUs), steps down if FPS < 40 for 2.5 s, steps up if FPS > 54, and remembers levels that were too slow so it doesn't flip back and forth. The ⚙️ button cycles Auto → Low → Medium → High.
+**Auto mode** (default) starts at Medium (Low on phones / Mali / Adreno GPUs), steps down if FPS < 40 for 2.5 s, steps up if FPS > 54 (never to Ultra), and remembers levels that were too slow. The ⚙️ button cycles Auto → Low → Medium → High → Ultra.
 
 **Benchmark:** open the game with `?bench=1` in the URL (served over http) – it measures each preset for ~5 s and POSTs JSON results to `/result` (or logs them to the console).
 

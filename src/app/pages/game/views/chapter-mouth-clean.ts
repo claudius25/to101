@@ -7,7 +7,7 @@ export class ChapterMouthClean implements ScreenView {
   readonly id = 'chapter-mouth-clean' as const;
   readonly animated = true;
   readonly briefing = {
-    text: '**Mouth clean**\nMove with the arrows. Enter pokes. Tap a germ to walk up and scrub it.',
+    text: '**Mouth clean**\nMove with the arrows. Enter pokes. Drag to pan. Pinch to zoom.',
     fontSize: 15,
   };
 
@@ -17,6 +17,7 @@ export class ChapterMouthClean implements ScreenView {
 
   private runtime: MouthCleanRuntime | null = null;
   private error = '';
+  private readonly touches = new Map<number, { x: number; y: number }>();
 
   enter(): void {
     if (this.runtime || this.error) return;
@@ -56,8 +57,33 @@ export class ChapterMouthClean implements ScreenView {
   }
 
   pointer(event: ViewPointer): boolean {
-    if (event.phase === 'down') this.runtime?.move(event.x, event.y);
+    if (event.phase === 'up' || event.phase === 'cancel') {
+      this.touches.delete(event.id);
+      return true;
+    }
+    if (event.phase === 'down') {
+      this.touches.set(event.id, { x: event.x, y: event.y });
+      return true;
+    }
+    if (!this.touches.has(event.id)) return true;
+    const before = this.gesture();
+    this.touches.set(event.id, { x: event.x, y: event.y });
+    const after = this.gesture();
+    this.runtime?.pan(after.x - before.x, after.y - before.y);
+    if (before.distance > 0 && after.distance > 0) {
+      this.runtime?.zoom(before.distance / after.distance);
+    }
     return true;
+  }
+
+  private gesture(): { x: number; y: number; distance: number } {
+    const [first, second] = [...this.touches.values()];
+    if (!second) return { ...first, distance: 0 };
+    return {
+      x: (first.x + second.x) / 2,
+      y: (first.y + second.y) / 2,
+      distance: Math.hypot(second.x - first.x, second.y - first.y),
+    };
   }
 
   key(key: string): boolean {
@@ -71,6 +97,7 @@ export class ChapterMouthClean implements ScreenView {
   }
 
   suspend(): void {
+    this.touches.clear();
     this.runtime?.suspend();
   }
 

@@ -1,3 +1,4 @@
+import { ChapterMouthClean } from './chapter-mouth-clean';
 ﻿import { createMouthClean, MouthCleanRuntime } from './mouth-clean-runtime';
 
 // Exercise the supplied GLBs through the same runtime used by the chapter.
@@ -7,6 +8,7 @@ describe('Mouth clean runtime', () => {
   afterEach(() => runtime?.dispose());
 
   it('loads both models and renders movement and combat', async () => {
+    const errors = spyOn(console, 'error').and.callThrough();
     runtime = createMouthClean({ heroScale: 0.52, quality: 'medium' });
     const deadline = performance.now() + 15000;
     while (runtime.status().loading && performance.now() < deadline) {
@@ -27,6 +29,10 @@ describe('Mouth clean runtime', () => {
     runtime.setQuality('high');
     runtime.render(640, 360);
     expect(runtime.status().qualityLevel).toBe('high');
+    expect(runtime.canvas.width).toBe(Math.floor(640 * Math.min(devicePixelRatio, 1.5)));
+    runtime.setQuality('ultra');
+    runtime.render(640, 360);
+    expect(runtime.status().qualityLevel).toBe('ultra');
     expect(runtime.canvas.width).toBe(Math.floor(640 * Math.min(devicePixelRatio, 2)));
     runtime.setQuality('low');
     runtime.update(16);
@@ -47,5 +53,55 @@ describe('Mouth clean runtime', () => {
     expect(brightPixels).toBeGreaterThan(100);
     runtime.setQuality('auto');
     expect(runtime.status().qualityMode).toBe('auto');
+    expect(errors).not.toHaveBeenCalled();
   }, 60000);
+});
+
+
+describe('Mouth clean screen gestures', () => {
+  let chapter: ChapterMouthClean;
+  let controls: jasmine.SpyObj<MouthCleanRuntime>;
+
+  beforeEach(() => {
+    chapter = new ChapterMouthClean();
+    controls = jasmine.createSpyObj<MouthCleanRuntime>('runtime', ['pan', 'zoom', 'key', 'suspend']);
+    Object.assign(chapter, { runtime: controls });
+  });
+
+  it('pans on drag and leaves taps without a movement command', () => {
+    chapter.pointer({ id: 1, phase: 'down', x: 100, y: 100 });
+    expect(controls.pan).not.toHaveBeenCalled();
+    expect(controls.key).not.toHaveBeenCalled();
+    chapter.pointer({ id: 1, phase: 'move', x: 130, y: 120 });
+    expect(controls.pan).toHaveBeenCalledWith(30, 20);
+    expect(controls.zoom).not.toHaveBeenCalled();
+    chapter.key('right');
+    chapter.keyUp('right');
+    expect(controls.key.calls.allArgs()).toEqual([['right', true], ['right', false]]);
+  });
+
+  it('zooms with a pinch and resumes a single finger drag without a jump', () => {
+    chapter.pointer({ id: 1, phase: 'down', x: 100, y: 100 });
+    chapter.pointer({ id: 2, phase: 'down', x: 200, y: 100 });
+    chapter.pointer({ id: 2, phase: 'move', x: 300, y: 100 });
+    expect(controls.zoom).toHaveBeenCalledWith(0.5);
+    expect(controls.pan).toHaveBeenCalledWith(50, 0);
+    chapter.pointer({ id: 2, phase: 'up', x: 300, y: 100 });
+    controls.zoom.calls.reset();
+    chapter.pointer({ id: 1, phase: 'move', x: 110, y: 100 });
+    expect(controls.pan).toHaveBeenCalledWith(10, 0);
+    expect(controls.zoom).not.toHaveBeenCalled();
+  });
+
+  it('clears gesture tracking when cancelled or suspended', () => {
+    chapter.pointer({ id: 1, phase: 'down', x: 100, y: 100 });
+    chapter.pointer({ id: 1, phase: 'cancel', x: 100, y: 100 });
+    chapter.pointer({ id: 1, phase: 'move', x: 200, y: 100 });
+    chapter.pointer({ id: 2, phase: 'down', x: 200, y: 100 });
+    chapter.suspend();
+    chapter.pointer({ id: 2, phase: 'move', x: 300, y: 100 });
+    expect(controls.pan).not.toHaveBeenCalled();
+    expect(controls.zoom).not.toHaveBeenCalled();
+    expect(controls.suspend).toHaveBeenCalled();
+  });
 });

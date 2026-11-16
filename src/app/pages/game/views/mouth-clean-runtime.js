@@ -39,13 +39,13 @@ const STEP = 0.24;                // biggest bump he can walk up without jumping
 
 // ======================= renderer / scene =======================
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, stencil: true, preserveDrawingBuffer: true });   // stencil: used for the hero's x-ray outline
 renderer.setPixelRatio(1);
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
-renderer.toneMapping = THREE.NeutralToneMapping; renderer.toneMappingExposure = 0.92;
+renderer.toneMapping = THREE.NeutralToneMapping; renderer.toneMappingExposure = 1.05;
 renderer.localClippingEnabled = true;
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0d0105);
+scene.background = new THREE.Color(0x1e050b);
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 scene.environmentIntensity = 0.0;
@@ -54,32 +54,16 @@ const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 200);
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true; controls.enabled = false;
 
-scene.add(new THREE.HemisphereLight(0xffd0c8, 0x2a0408, 0.32));
-const key = new THREE.DirectionalLight(0xffe8dc, 0.8);
+const hemi = new THREE.HemisphereLight(0xffe0d8, 0x4a0a12, 0.8); scene.add(hemi);
+const key = new THREE.DirectionalLight(0xfff0e6, 1.7);
 key.position.set(14, 16, 6); key.castShadow = true; key.shadow.mapSize.set(1024, 1024);
 Object.assign(key.shadow.camera, { left: -14, right: 14, top: 14, bottom: -14, near: 1, far: 60 });
 key.shadow.bias = -0.0008; key.shadow.normalBias = 0.03;
 scene.add(key, key.target);
-const fill = new THREE.DirectionalLight(0xffb0a0, 0.22); fill.position.set(10, 2, -6); scene.add(fill);
-const warm = new THREE.PointLight(0xff6a50, 12, 20, 1.6); warm.position.set(0, 6, -4.4); scene.add(warm);
-const throatGlow = new THREE.PointLight(0xff3a2a, 16, 16, 1.8); throatGlow.position.set(1, 3, -15.8); scene.add(throatGlow);
-const heroLamp = new THREE.SpotLight(0xfff0c4, 70, 12, 0.5, 0.45, 1.1); scene.add(heroLamp, heroLamp.target);
-heroLamp.castShadow = true; heroLamp.shadow.mapSize.set(1024, 1024); heroLamp.shadow.bias = -0.002;
-const lampGlow = new THREE.PointLight(0xffe2a0, 3, 1.6, 2); scene.add(lampGlow);       // little halo around the helmet
-// visible beam: additive cone that fades with distance
-const BEAM_LEN = 5.5;
-const beamGeo = new THREE.ConeGeometry(1.3, BEAM_LEN, 32, 1, true);
-beamGeo.translate(0, -BEAM_LEN / 2, 0); beamGeo.rotateX(-Math.PI / 2);                 // apex at origin, opens along +Z
-const beam = new THREE.Mesh(beamGeo, new THREE.ShaderMaterial({
-  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-  uniforms: { uLen: { value: BEAM_LEN }, uColor: { value: new THREE.Color('#ffe9b0') }, uStr: { value: 0.22 } },
-  vertexShader: `varying float vD; varying vec3 vN; varying vec3 vV;
-    void main(){ vD = position.z; vec4 mv = modelViewMatrix * vec4(position,1.); vN = normalize(normalMatrix*normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix*mv; }`,
-  fragmentShader: `uniform float uLen; uniform vec3 uColor; uniform float uStr; varying float vD; varying vec3 vN; varying vec3 vV;
-    void main(){ float f = 1. - clamp(vD/uLen,0.,1.); float edge = pow(abs(dot(vN,vV)), 1.5);
-      gl_FragColor = vec4(uColor * uStr * f * f * edge, 1.); }`
-}));
-beam.renderOrder = 10; scene.add(beam);
+const fill = new THREE.DirectionalLight(0xffc0b0, 0.55); fill.position.set(10, 2, -6); scene.add(fill);
+const warm = new THREE.PointLight(0xff7a60, 22, 22, 1.5); warm.position.set(0, 6, -4.4); scene.add(warm);
+const throatGlow = new THREE.PointLight(0xff4a35, 20, 16, 1.8); throatGlow.position.set(1, 3, -15.8); scene.add(throatGlow);
+
 
 // cut-away plane: keep x <= CUT_X
 const cutPlane = new THREE.Plane(new THREE.Vector3(-1, 0, 0), CUT_X);
@@ -110,8 +94,50 @@ const salivaMat = () => new THREE.MeshPhysicalMaterial({
   attenuationColor: new THREE.Color('#ffd6d6'), attenuationDistance: 1.2,
   clearcoat: 1, clearcoatRoughness: 0.02, specularIntensity: 1, envMap: envTex, envMapIntensity: 1.6,
   transparent: true, opacity: 0.95, depthWrite: false });
+// ---- tongue surface detail: cartoon papillae, mottling, centre groove ----
+// A small tileable texture is painted once on a canvas (R = fine dots, G = big bumps, B = soft blotches),
+// then projected from above in world space. The shader only does 2 texture lookups – cheap on any GPU.
+const tongueTex = (() => {
+  const N = 256, c = document.createElement('canvas'); c.width = c.height = N; const g = c.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, N, N);
+  const wrapDraw = (x, y, r, draw) => { for (const dx of [-N, 0, N]) for (const dy of [-N, 0, N]) if (x + dx > -r && x + dx < N + r && y + dy > -r && y + dy < N + r) draw(x + dx, y + dy); };
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // B: soft blotches
+  g.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 26; i++) { const x = rnd() * N, y = rnd() * N, r = 30 + rnd() * 50, a = 0.18 + rnd() * 0.22;
+    wrapDraw(x, y, r, (px, py) => { const gr = g.createRadialGradient(px, py, 0, px, py, r); gr.addColorStop(0, `rgba(0,0,255,${a})`); gr.addColorStop(1, 'rgba(0,0,255,0)'); g.fillStyle = gr; g.fillRect(px - r, py - r, 2 * r, 2 * r); }); }
+  // G: big round bumps (sparse)
+  for (let i = 0; i < 12; i++) { const x = rnd() * N, y = rnd() * N, r = 11 + rnd() * 6;
+    wrapDraw(x, y, r, (px, py) => { const gr = g.createRadialGradient(px, py, 0, px, py, r); gr.addColorStop(0, 'rgba(0,255,0,1)'); gr.addColorStop(0.7, 'rgba(0,255,0,0.9)'); gr.addColorStop(1, 'rgba(0,255,0,0)'); g.fillStyle = gr; g.fillRect(px - r, py - r, 2 * r, 2 * r); }); }
+  // R: lots of tiny papillae
+  for (let i = 0; i < 150; i++) { const x = rnd() * N, y = rnd() * N, r = 3.5 + rnd() * 2.5;
+    wrapDraw(x, y, r, (px, py) => { const gr = g.createRadialGradient(px, py, 0, px, py, r); gr.addColorStop(0, 'rgba(255,0,0,1)'); gr.addColorStop(0.6, 'rgba(255,0,0,0.85)'); gr.addColorStop(1, 'rgba(255,0,0,0)'); g.fillStyle = gr; g.fillRect(px - r, py - r, 2 * r, 2 * r); }); }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.NoColorSpace;
+  t.anisotropy = 4; return t;
+})();
+function tongueDetail(mat) {
+  mat.customProgramCacheKey = () => 'tongueDetail';
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uTongueTex = { value: tongueTex };
+    sh.vertexShader = 'varying vec3 vTW;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+      '#include <begin_vertex>\n  vTW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
+    sh.fragmentShader = 'varying vec3 vTW;\nuniform sampler2D uTongueTex;\n' + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+      {
+        vec4 fine = texture2D( uTongueTex, vTW.xz * 0.32 );          // small papillae + blotches
+        vec4 big  = texture2D( uTongueTex, vTW.xz * 0.11 + 0.37 );   // bigger bumps
+        float back = 1.0 - smoothstep( -14.0, -4.0, vTW.z );          // 0 at the tip, 1 toward the throat
+        diffuseColor.rgb *= mix( 1.05, 0.84, fine.b );                // soft blotches
+        diffuseColor.rgb *= 1.0 - 0.28 * exp( -pow( vTW.x / 0.55, 2.0 ) );   // centre groove
+        diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * vec3( 1.22, 1.35, 1.3 ), fine.r * 0.55 );   // soft lighter-pink dots
+        diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * vec3( 0.86, 0.62, 0.66 ), big.g * ( 0.55 + 0.3 * back ) ); // deeper-red bumps
+        diffuseColor.rgb *= 1.0 - 0.18 * back;                        // deeper colour toward the throat
+      }`);
+  };
+  return mat;
+}
 const fixMat = (m) => {
   if (m.name === 'M_Saliva') return (matCache.M_Saliva ??= salivaMat());
+  if (m.name === 'M_Tongue') return (matCache.M_Tongue ??= tongueDetail(toon({ ...PALETTE.M_Tongue })));
   const p = PALETTE[m.name]; return p ? (matCache[m.name] ??= toon({ ...p })) : m; };
 // semi-transparent "ghost" version for whatever sits between the camera and the hero
 const ghostPlane = new THREE.Plane(new THREE.Vector3(1, 0, 0), -CUT_X);   // keeps x >= CUT_X
@@ -119,7 +145,8 @@ const ghostMat = (name) => ghostCache[name] ??= toon({ ...PALETTE[name], side: T
   opacity: 0.32, depthWrite: false, clippingPlanes: [ghostPlane] });
 const ghosts = [];
 const GHOSTED = new Set(['M_Enamel', 'M_Plaque']);   // only the near teeth (and their plaque) turn see-through
-const NEVER_CUT = new Set(['M_Tongue', 'M_Saliva']); // the tongue stays whole and solid
+const NEVER_CUT = new Set(['M_Tongue', 'M_Saliva', 'M_Enamel_front', 'M_Plaque_front']); // tongue + front teeth stay whole and solid
+const FRONT_TOOTH = /^(Tooth|Plaque)_(upper|lower)_[RL][123]_/;   // incisors, laterals, canines
 function setCut(on) {
   for (const [name, m] of Object.entries(matCache)) {
     m.clippingPlanes = (on && !NEVER_CUT.has(name)) ? clipList : null;
@@ -148,6 +175,10 @@ loader.load(MOUTH_URL, (g) => {
   mouth.traverse((o) => {
     if (!o.isMesh) return;
     o.material = fixMat(o.material);
+    if (FRONT_TOOTH.test(o.name)) {           // front teeth: always opaque, never cut away or ghosted
+      const k = o.material === matCache.M_Plaque ? 'M_Plaque_front' : 'M_Enamel_front';
+      o.material = matCache[k] ??= toon({ ...PALETTE[k === 'M_Plaque_front' ? 'M_Plaque' : 'M_Enamel'] });
+    }
     o.receiveShadow = true;
     o.castShadow = false;            // mouth parts never shadow the tongue — only the hero & germs do
     if (o.name === 'Tongue' || o.name === 'Throat' || o.name.startsWith('Tooth_lower')) groundMeshes.push(o);
@@ -231,6 +262,7 @@ function loadHero() {
       o.material = Array.isArray(o.material) ? o.material.map(conv) : conv(o.material);
     });
     scene.add(hero);
+    addXrayOutline(hero);
     mixer = new THREE.AnimationMixer(hero);
     for (const c of g.animations) actions[c.name] = mixer.clipAction(c);
     for (const n of ['Poke', 'OverheadStrike', 'MarchAndWave']) { actions[n]?.setLoop(THREE.LoopOnce, 1); if (actions[n]) actions[n].clampWhenFinished = true; }
@@ -239,10 +271,53 @@ function loadHero() {
     play('FightStance', 0);
     applyQuality();
     placeCamera(true);
+    // warm up shaders used later (foam, splats) so the first hit doesn't stutter
+    for (const c of ['#ffffff', '#d8f1ff', '#fff4c8']) { const w = new THREE.Mesh(foamGeo, foamMat(c)); w.position.copy(hero.position); scene.add(w); setTimeout(() => scene.remove(w), 50); }
+    renderer.compile(scene, camera);
 
     flash('Scrub the germs! →');
   }, undefined, (e) => { loadingMessage = 'Could not load the hero: ' + (e.message || e); });
 }
+// ======================= x-ray outline: hero stays visible behind teeth =======================
+// Pass 1 (mask): the hero's hidden parts write 1 into the stencil buffer (no colour).
+// Pass 2 (outline): a slightly inflated copy, drawn only where it is hidden AND outside the mask → a rim.
+// Both run after the mouth but before the hero's normal draw, so "hidden" means hidden by the mouth, not by himself.
+const XRAY_COLOR = '#b05cff', XRAY_WIDTH = 0.14;     // width in hero units
+const xrayMask = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, depthFunc: THREE.GreaterDepth,
+  stencilWrite: true, stencilRef: 1, stencilFunc: THREE.AlwaysStencilFunc, stencilZPass: THREE.ReplaceStencilOp });
+const xrayLine = new THREE.MeshBasicMaterial({ color: XRAY_COLOR, depthWrite: false, depthFunc: THREE.GreaterDepth,
+  stencilWrite: true, stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc,
+  stencilFail: THREE.KeepStencilOp, stencilZFail: THREE.KeepStencilOp, stencilZPass: THREE.KeepStencilOp });
+// Both passes are nudged toward the camera by XRAY_BIAS world units, so tiny overlaps
+// (boots sinking into the bumpy tongue) don't count as "hidden" – only real occluders like teeth do.
+const XRAY_BIAS = 0.12;
+function xrayShader(width) {
+  return (sh) => {
+    sh.uniforms.uWidth = { value: width }; sh.uniforms.uBias = { value: XRAY_BIAS };
+    sh.vertexShader = 'uniform float uWidth;\nuniform float uBias;\n' + sh.vertexShader
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  transformed += normalize( normal ) * uWidth;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\n  mvPosition.xyz += normalize( -mvPosition.xyz ) * uBias;\n  gl_Position = projectionMatrix * mvPosition;');
+  };
+}
+xrayMask.onBeforeCompile = xrayShader(0.0);
+xrayLine.onBeforeCompile = xrayShader(XRAY_WIDTH);
+xrayMask.customProgramCacheKey = () => 'xrayMask';
+xrayLine.customProgramCacheKey = () => 'xrayLine';
+function addXrayOutline(root) {
+  const bodies = [];
+  root.traverse((o) => { if (o.isMesh && !o.userData.xray && o.material.name !== 'Outline') bodies.push(o); });
+  for (const o of bodies) {
+    o.renderOrder = 30;                                    // the hero's normal draw comes after the x-ray passes
+    for (const [mat, order] of [[xrayMask, 20], [xrayLine, 21]]) {
+      const c = o.clone(false);                            // shares geometry (and skeleton for skinned meshes)
+      c.material = mat; c.renderOrder = order; c.castShadow = false; c.receiveShadow = false;
+      c.userData.xray = true; c.raycast = () => {};
+      o.parent.add(c);
+    }
+  }
+  root.traverse((o) => { if (o.isMesh && o.material.name === 'Outline') o.renderOrder = 30; });
+}
+
 function play(name, fade = 0.2) {
   const next = actions[name]; if (!next || next === current) return;
   next.reset(); next.enabled = true; next.setEffectiveTimeScale(1); next.setEffectiveWeight(1); next.play();
@@ -251,13 +326,11 @@ function play(name, fade = 0.2) {
 }
 
 // ======================= input =======================
-const keys = new Set(); const touch = { l: false, r: false, u: false, d: false };
+const keys = new Set();
 function jump() { if (hero && S.onGround && !S.busy) { S.vy = JUMP_V; S.onGround = false; } }
 
 function toggleView() {
   sideView = !sideView;
-
-
   setCut(sideView);
   controls.enabled = !sideView;
   if (!sideView) { controls.target.set(S.x, S.y + 0.5, S.z); camera.position.set(S.x + 6, S.y + 3.5, S.z + 6); controls.update(); }
@@ -289,11 +362,15 @@ function flash(message) {
 }
 
 const parts = []; const foamGeo = new THREE.SphereGeometry(0.035, 8, 6);
+// foam particles share one unlit material per colour (no per-particle materials → no shader compiles, no GC)
+const foamMats = {};
+const foamMat = (c) => foamMats[c] ??= new THREE.MeshBasicMaterial({ color: c });
 function burst(at, n = 24, color = '#ffffff') {
   for (let i = 0; i < n; i++) {
-    const m = new THREE.Mesh(foamGeo, new THREE.MeshStandardMaterial({ color, emissive: '#bfe9ff', emissiveIntensity: 0.6, transparent: true }));
-    m.position.copy(at); m.scale.setScalar(0.6 + Math.random() * 1.6);
-    parts.push({ m, v: new THREE.Vector3((Math.random() - .5) * 0.8, Math.random() * 2.2 + 0.6, (Math.random() - .5) * 2.4), life: 0.8 + Math.random() * 0.5 });
+    const m = new THREE.Mesh(foamGeo, foamMat(color));
+    const s0 = 0.6 + Math.random() * 1.6;
+    m.position.copy(at); m.scale.setScalar(s0);
+    parts.push({ m, s0, v: new THREE.Vector3((Math.random() - .5) * 0.8, Math.random() * 2.2 + 0.6, (Math.random() - .5) * 2.4), life: 0.8 + Math.random() * 0.5 });
     scene.add(m);
   }
 }
@@ -304,7 +381,7 @@ const LEFT_EDGE_Z = 9.9, RIGHT_EDGE_Z = Z_MIN - 1.5;
 const CAM_DEFAULT = 11.5;
 const cam = { dist: CAM_DEFAULT, panZ: 0, panY: 0, follow: true, freeZ: 4, freeY: 2 };
 const camLook = new THREE.Vector3(), camPos = new THREE.Vector3();
-function halfWidth(d) { return d * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect; }
+function halfWidth(d) { const a = Number.isFinite(camera.aspect) && camera.aspect > 0 ? camera.aspect : 16 / 9; return d * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * a; }
 function camTarget() {
   const hw = halfWidth(cam.dist);
   let zc = cam.follow ? S.z - S.face * 0.5 + cam.panZ : cam.freeZ + cam.panZ;
@@ -338,7 +415,7 @@ function slimUvula(mouth) {
   u.geometry = u.geometry.clone();
   u.geometry.translate(-local.x + u.position.x, -local.y + u.position.y, -local.z + u.position.z);
   u.position.copy(local);
-  u.scale.set(0.5, 1.08, 0.5);          // thin it out, a touch longer, still hanging from the soft palate
+  u.scale.set(0.5, 0.81, 0.5);          // thin it out, a touch longer, still hanging from the soft palate
   uvula = u;
 }
 
@@ -453,70 +530,12 @@ function updateDrips(dt, t) {
   }
 }
 
-// ======================= click / tap to move =======================
-let moveTarget = null;            // { x, z, germ?, stuck }
-const pickRay = new THREE.Raycaster(), ndc = new THREE.Vector2();
-// target pointer: pulsing ring on the ground + bobbing arrow above it
-const marker = new THREE.Group(); marker.visible = false; scene.add(marker);
-const mkMat = new THREE.MeshBasicMaterial({ color: '#ffe9a8', transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide });
-const mkRing = new THREE.Mesh(new THREE.RingGeometry(0.15, 0.22, 40).rotateX(-Math.PI / 2), mkMat);
-const mkRing2 = new THREE.Mesh(new THREE.RingGeometry(0.05, 0.08, 24).rotateX(-Math.PI / 2), mkMat);
-const mkArrow = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.26, 4).rotateX(Math.PI), mkMat);
-for (const m of [mkRing, mkRing2, mkArrow]) { m.renderOrder = 6; marker.add(m); }
-let mkState = 'off', mkT = 0;
-function clickToMove(e) {
-  if (!hero) return;
-  const r = { left: 0, top: 0, width: viewWidth, height: viewHeight };                       // exact canvas rect, any DPI / zoom
-  ndc.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-  camera.updateMatrixWorld(); pickRay.setFromCamera(ndc, camera);
-  // germs first: walk up and poke
-  const live = germs.filter(g => g.alive).map(g => g.g);
-  const gh = pickRay.intersectObjects(live, true)[0];
-  if (gh) {
-    let o = gh.object; while (o.parent && !live.includes(o)) o = o.parent;
-    const germ = germs.find(g => g.g === o);
-    if (germ) { moveTarget = { x: germ.x, z: germ.z, germ, stuck: 0 }; showMarker(germ.x, germ.y + 0.3, germ.z, '#ffb02e'); return; }
-  }
-  // otherwise the first walkable surface hit (ignore anything nearer than the cut-away)
-  const hits = pickRay.intersectObjects(groundMeshes, false).filter(h => h.object.name === 'Tongue' || h.point.x <= CUT_X + 0.05);   // cut-away teeth aren't clickable
-  const h = hits[0]; if (!h) return;
-  const x = THREE.MathUtils.clamp(h.point.x, X_MIN, X_MAX), z = THREE.MathUtils.clamp(h.point.z, Z_MIN, Z_MAX);
-  moveTarget = { x, z, stuck: 0 };
-  showMarker(x, h.point.y, z, '#ffe9a8');
-}
-function showMarker(x, y, z, col) {
-  marker.position.set(x, y + 0.03, z); mkMat.color.set(col); mkMat.opacity = 0.95;
-  marker.scale.setScalar(1); marker.visible = true; mkState = 'on'; mkT = 0;
-}
-function popMarker() { if (mkState !== 'on') return; mkState = 'pop'; mkT = 0; burst(marker.position.clone().setY(marker.position.y + 0.2), 10, '#fff4c8'); }
-function fadeMarker() { if (mkState === 'on') { mkState = 'fade'; mkT = 0; } }
-function clearTarget(reached) { if (!moveTarget) return; moveTarget = null; reached ? popMarker() : fadeMarker(); }
-function updateMarker(dt, t) {
-  if (!marker.visible) return;
-  mkT += dt;
-  if (mkState === 'on') {
-    const pulse = 1 + Math.sin(t * 6) * 0.12;
-    mkRing.scale.setScalar(pulse); mkRing2.scale.setScalar(2 - pulse);
-    mkArrow.position.y = 0.42 + Math.abs(Math.sin(t * 4)) * 0.16;   // bobbing pointer
-    mkArrow.rotation.y = t * 2;
-    // a germ target moves with the germ's wobble
-    if (moveTarget?.germ) marker.position.y = moveTarget.germ.y + 0.03 + moveTarget.germ.g.scale.y * 0.5;
-  } else if (mkState === 'pop') {             // hero reached it: quick burst and gone
-    const k = Math.min(1, mkT / 0.28);
-    marker.scale.setScalar(1 + k * 1.4); mkMat.opacity = 0.95 * (1 - k);
-    if (k >= 1) { marker.visible = false; mkState = 'off'; }
-  } else if (mkState === 'fade') {            // cancelled: soft fade
-    const k = Math.min(1, mkT / 0.35);
-    mkMat.opacity = 0.95 * (1 - k); marker.scale.setScalar(1 - k * 0.4);
-    if (k >= 1) { marker.visible = false; mkState = 'off'; }
-  }
-}
-
 // ======================= quality settings (Auto / Low / Medium / High) =======================
 const PRESETS = {
-  low:    { dpr: 0.75, shadows: false, lampShadow: false, transmission: false, ghosts: true, fewLights: true,  shadowRes: 512 },
-  medium: { dpr: 1,    shadows: true,  lampShadow: false, transmission: false, ghosts: true, fewLights: true,  shadowRes: 1024 },
-  high:   { dpr: Math.min(devicePixelRatio, 2), shadows: true, lampShadow: true, transmission: true, ghosts: true, fewLights: false, shadowRes: 2048 },
+  low:    { dpr: 0.75, shadows: false, transmission: false, ghosts: true, fewLights: true,  shadowRes: 512 },
+  medium: { dpr: 1,    shadows: true,  transmission: false, ghosts: true, fewLights: true,  shadowRes: 1024 },
+  high:   { dpr: Math.min(devicePixelRatio, 1.5), shadows: true, transmission: false, ghosts: true, fewLights: false, shadowRes: 2048 },
+  ultra:  { dpr: Math.min(devicePixelRatio, 2), shadows: true, transmission: true, ghosts: true, fewLights: false, shadowRes: 2048 },   // manual only: refractive saliva
 };
 const LEVELS = ['low', 'medium', 'high'];
 const Q = { ...PRESETS.medium };
@@ -538,29 +557,31 @@ function applyQuality() {
   Object.assign(Q, PRESETS[lvl]);
   renderer.setPixelRatio(Q.dpr); resize(viewWidth, viewHeight);
   renderer.shadowMap.enabled = Q.shadows;
-  key.castShadow = Q.shadows; heroLamp.castShadow = Q.shadows && Q.lampShadow;
+  key.castShadow = Q.shadows;
   if (key.shadow.mapSize.x !== Q.shadowRes) { key.shadow.mapSize.set(Q.shadowRes, Q.shadowRes); key.shadow.map?.dispose(); key.shadow.map = null; }
   blobShadow.visible = !Q.shadows;
   const sal = matCache.M_Saliva;
   if (sal) { sal.transmission = Q.transmission ? 1 : 0; sal.opacity = Q.transmission ? 0.95 : 0.42; sal.needsUpdate = true; }
   for (const g of ghosts) g.visible = Q.ghosts && sideView;
-  warm.visible = fill.visible = lampGlow.visible = !Q.fewLights;
+  warm.visible = fill.visible = !Q.fewLights;
+  hemi.intensity = Q.fewLights ? 1.15 : 0.8;          // cheap ambient makes up for the lights that are switched off
   scene.traverse(o => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.needsUpdate = true); });
 }
 function setQuality(mode) {
-  if (!['auto', ...LEVELS].includes(mode)) throw new RangeError('Unknown mouth-clean quality: ' + mode);
+  if (!['auto', ...Object.keys(PRESETS)].includes(mode)) throw new RangeError('Unknown mouth-clean quality: ' + mode);
   qualityMode = mode;
   autoT = autoFrames = autoCool = 0;
   applyQuality();
 }
 function cycleQuality() {
-  const order = ['auto', 'low', 'medium', 'high'];
+  const order = ['auto', 'low', 'medium', 'high', 'ultra'];
   setQuality(order[(order.indexOf(qualityMode) + 1) % order.length]);
 }
 // Auto mode: step quality down if FPS stays low, back up if there's lots of headroom
 let autoT = 0, autoFrames = 0, autoCool = 0;
 function autoTune(dt) {
   if (qualityMode !== 'auto') return;
+  if (document.hidden || dt > 0.25) { autoT = 0; autoFrames = 0; return; }   // hitch or hidden: not a real FPS sample
   autoT += dt; autoFrames++; autoCool -= dt;
   if (autoT < 2.5) return;
   const fps = autoFrames / autoT; autoT = 0; autoFrames = 0;
@@ -573,6 +594,7 @@ function autoTune(dt) {
 // ======================= loop =======================
 let viewWidth = 2, viewHeight = 2;
 function resize(width, height) {
+  if (!Number.isFinite(width + height) || width <= 0 || height <= 0) return;
   viewWidth = width;
   viewHeight = height;
   const ratio = renderer.getPixelRatio();
@@ -590,23 +612,10 @@ function update(deltaMs) {
   }
   if (hero) {
     // screen-right = toward the throat (-Z); "down" on screen = toward the camera (+X)
-    const right = keys.has('d') || keys.has('arrowright') || touch.r, left = keys.has('a') || keys.has('arrowleft') || touch.l;
-    const up = keys.has('w') || keys.has('arrowup') || touch.u, down = keys.has('s') || keys.has('arrowdown') || touch.d;
+    const right = keys.has('d') || keys.has('arrowright'), left = keys.has('a') || keys.has('arrowleft');
+    const up = keys.has('w') || keys.has('arrowup'), down = keys.has('s') || keys.has('arrowdown');
     let mz = (left ? 1 : 0) - (right ? 1 : 0);          // +1 → toward the lips
     let mx = (down ? 1 : 0) - (up ? 1 : 0);             // +1 → toward the camera
-    let autoRun = false;
-    if (mx || mz) clearTarget(false);                   // keyboard / d-pad takes over
-    else if (moveTarget && !S.busy) {
-      const tx = moveTarget.x - S.x, tz = moveTarget.z - S.z, dist = Math.hypot(tx, tz);
-      const reach = moveTarget.germ ? 0.5 : 0.12;
-      if (moveTarget.germ && !moveTarget.germ.alive) clearTarget(false);
-      else if (dist <= reach) {
-        if (moveTarget.germ) { S.fx = tx / (dist || 1); S.fz = tz / (dist || 1); if (tz) S.face = tz > 0 ? 1 : -1; attack('Poke'); }
-        clearTarget(true);
-      } else {
-        mx = tx / dist; mz = tz / dist; autoRun = dist > 3.5;
-      }
-    }
     const ml = Math.hypot(mx, mz);
     S.moving = ml > 0;
     const canMove = !S.busy || !S.onGround;
@@ -614,8 +623,7 @@ function update(deltaMs) {
       mx /= ml; mz /= ml;
       S.fx = mx; S.fz = mz;
       if (mz) S.face = mz > 0 ? 1 : -1;
-      const run = keys.has('shift') || autoRun, sp = run ? RUN : WALK;
-      const px = S.x, pz = S.z;
+      const run = keys.has('shift'), sp = run ? RUN : WALK;
       const nz = THREE.MathUtils.clamp(S.z + mz * sp * dt, Z_MIN, Z_MAX);
       const nx = THREE.MathUtils.clamp(S.x + mx * sp * 0.8 * dt, X_MIN, X_MAX);
       // along the track: block steps that are too high (jump instead)
@@ -625,11 +633,9 @@ function update(deltaMs) {
       const gx = groundBelow(S.z, S.y + STEP * 0.8, nx);
       if (gx > -40 && gx < S.y + STEP && gx > S.y - 0.7) S.x = nx;
       actions.Walk?.setEffectiveTimeScale(run ? 2.6 : 1.6);
-      // give up on a click target if something blocks the way (a tall step: jump with Space)
-      if (moveTarget) { const prog = Math.hypot(S.x - px, S.z - pz); moveTarget.stuck = prog < sp * dt * 0.2 ? moveTarget.stuck + dt : 0; if (moveTarget.stuck > 0.5) clearTarget(false); }
     }
     // gravity / ground
-    const g = groundBelow(S.z, S.y + STEP * 0.7);
+    const g = groundBelow(S.z, S.y + STEP * 0.7); S.ground = g;
     if (S.onGround) {
       if (g < S.y - STEP * 0.6) { S.onGround = false; S.vy = 0; }   // walked off an edge
       else S.y = THREE.MathUtils.lerp(S.y, g, 0.6);
@@ -649,11 +655,7 @@ function update(deltaMs) {
     hero.rotation.x = 0;
     mixer.update(S.onGround ? dt : dt * 0.4);
 
-    heroLamp.position.set(S.x + S.fx * 0.2, S.y + 0.66, S.z + S.fz * 0.2);
-    heroLamp.target.position.set(S.x + S.fx * 5, S.y + 0.05, S.z + S.fz * 5);
-    lampGlow.position.set(S.x + S.fx * 0.25 + 0.12, S.y + 0.66, S.z + S.fz * 0.25);
-    beam.position.copy(heroLamp.position); beam.lookAt(heroLamp.target.position);
-    beam.visible = !S.busy || current !== actions.OverheadStrike;
+
     key.target.position.set(S.x, S.y, S.z); key.position.set(S.x + 12, S.y + 16, S.z + 6);
 
     CUT_X = S.x + CUT_AHEAD; cutPlane.constant = CUT_X; ghostPlane.constant = -CUT_X;
@@ -668,22 +670,28 @@ function update(deltaMs) {
     else if (g.g.visible) { g.t += dt * 3; const s = Math.max(0, 1 - g.t); g.g.scale.setScalar(s); g.g.position.y += dt; if (s <= 0) g.g.visible = false; }
   }
   for (let i = parts.length - 1; i >= 0; i--) {
-    const p = parts[i]; p.life -= dt; p.v.y -= 8 * dt; p.m.position.addScaledVector(p.v, dt); p.m.material.opacity = Math.max(0, p.life);
-    if (p.life <= 0) { scene.remove(p.m); p.m.material.dispose(); parts.splice(i, 1); }
+    const p = parts[i]; p.life -= dt; p.v.y -= 8 * dt; p.m.position.addScaledVector(p.v, dt); p.m.scale.setScalar(p.s0 * Math.min(1, Math.max(0, p.life) * 1.6));   // shrink away instead of fading
+    if (p.life <= 0) { scene.remove(p.m); parts.splice(i, 1); }
   }
-  throatGlow.intensity = 14 + Math.sin(t * 1.3) * 5;
+  throatGlow.intensity = 20 + Math.sin(t * 1.3) * 6;
   updateDrips(dt, t);
   if (hero) autoTune(deltaMs / 1000);
-  if (hero && blobShadow.visible) blobShadow.position.set(S.x, groundBelow(S.z, S.y + 0.2) + 0.02, S.z);
-  updateMarker(dt, t);
+  if (hero && blobShadow.visible) { blobShadow.position.set(S.x, (S.ground ?? S.y) + 0.02, S.z); blobShadow.scale.setScalar(THREE.MathUtils.clamp(1 - (S.y - (S.ground ?? S.y)) * 0.6, 0.45, 1)); }
   if (uvula) uvula.rotation.x = Math.sin(t * 0.9) * 0.05, uvula.rotation.z = Math.sin(t * 0.7 + 1) * 0.04;
+  if (!Number.isFinite(S.x + S.y + S.z)) { S.x = LANE_X; S.z = 4.5; S.y = groundBelow(S.z, 4); S.vy = 0; S.onGround = true; }
+  if (!Number.isFinite(camera.position.x + camera.position.y + camera.position.z)) placeCamera(true);
 }
 setQuality(quality);
 return {
   canvas, update, setQuality,
   render(width, height) { resize(width, height); renderer.render(scene, camera); },
   status() { return { loading: !hero, message: loadingMessage, cleaned, total: germs.length, flash: flashMessage, qualityMode, qualityLevel: qualityMode === 'auto' ? autoLevel : qualityMode }; },
-  move(x, y) { clickToMove({ clientX: x, clientY: y }); },
+  pan(dx, dy) {
+    const worldPerPixel = 2 * halfWidth(cam.dist) / viewWidth;
+    cam.panZ += dx * worldPerPixel;
+    cam.panY = THREE.MathUtils.clamp(cam.panY + dy * worldPerPixel, -6, 10);
+  },
+  zoom(factor) { if (Number.isFinite(factor) && factor > 0) zoom(factor); },
   key(key, down) {
     const mapped = { left: 'arrowleft', right: 'arrowright', up: 'arrowup', down: 'arrowdown' }[key];
     if (mapped) { if (down) keys.add(mapped); else keys.delete(mapped); }
@@ -696,7 +704,7 @@ return {
     if (key === 'zoom-in') zoom(1 / 1.2);
     if (key === 'zoom-out') zoom(1.2);
   },
-  suspend() { keys.clear(); clearTarget(false); autoT = autoFrames = 0; },
+  suspend() { keys.clear(); autoT = autoFrames = 0; },
   dispose() {
     disposed = true;
     timers.clear();
@@ -704,6 +712,9 @@ return {
     mixer?.stopAllAction();
     scene.traverse((object) => object.shadow?.dispose());
     disposeObject(scene);
+    tongueTex.dispose();
+    foamGeo.dispose();
+    for (const material of Object.values(foamMats)) material.dispose();
     blobGeo.dispose();
     eyeGeo.dispose();
     scene.environment?.dispose();
