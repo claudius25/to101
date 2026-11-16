@@ -8,4 +8,4 @@ export interface MouthCleanRuntime {
   suspend(): void;
   dispose(): void;
 }
-export function createMouthClean(): MouthCleanRuntime;
+export function createMouthClean(options?: { heroScale?: number }): MouthCleanRuntime;

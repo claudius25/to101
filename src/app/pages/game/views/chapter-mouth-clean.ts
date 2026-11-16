@@ -11,13 +11,16 @@ export class ChapterMouthClean implements ScreenView {
     fontSize: 15,
   };
 
+  /** Uniform model scale. The original hero scale was 0.31. */
+  readonly heroScale = 0.52;
+
   private runtime: MouthCleanRuntime | null = null;
   private error = '';
 
   enter(): void {
     if (this.runtime || this.error) return;
     try {
-      this.runtime = createMouthClean();
+      this.runtime = createMouthClean({ heroScale: this.heroScale });
     } catch (error) {
       this.error = error instanceof Error ? error.message : 'Could not start the 3D scene.';
     }
@@ -40,7 +43,11 @@ export class ChapterMouthClean implements ScreenView {
     ctx.font = font(frame, 4.5, 600);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillText(`Mouth clean · ${status?.cleaned ?? 0} / ${status?.total ?? 0}`, unit * 3, unit * 3);
+    ctx.fillText(
+      `Mouth clean · ${status?.cleaned ?? 0} / ${status?.total ?? 0}`,
+      unit * 3,
+      unit * 3,
+    );
     if (this.error || status?.loading) {
       ctx.fillText(this.error || status?.message || '', unit * 3, unit * 38, width - unit * 6);
     }
@@ -75,5 +82,4 @@ export class ChapterMouthClean implements ScreenView {
     this.runtime?.dispose();
     this.runtime = null;
   }
-
 }

@@ -5,7 +5,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
-export function createMouthClean() {
+export function createMouthClean({ heroScale = 0.31 } = {}) {
 let loadingMessage = 'Loading mouth world...';
 let flashMessage = '';
 const canvas = document.createElement('canvas');
@@ -27,7 +27,7 @@ function disposeObject(root) {
   });
 }
 // ======================= world constants =======================
-const HERO_SCALE = 0.31;          // hero is tiny compared to the mouth
+const HERO_SCALE = heroScale;
 const LANE_X = 2.6;               // the 2D "track" runs along the top of the tongue's near lobe
 let CUT_X = 3.2;                  // moves with the hero: everything nearer the camera than this is cut / ghosted
 const X_MIN = -4.6, X_MAX = 4.6;   // how far he can walk away from / toward the camera
