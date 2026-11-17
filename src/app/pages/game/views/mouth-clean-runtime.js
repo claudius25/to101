@@ -6,12 +6,15 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-export function createMouthClean({ heroScale = 0.31, quality = 'auto' } = {}) {
+export function createMouthClean({ heroScale = 0.31, quality = 'auto', cellSize } = {}) {
 let loadingMessage = 'Loading mouth world...';
 let flashMessage = '';
 const canvas = document.createElement('canvas');
 const MOUTH_URL = 'assets/mouth-clean/MouthScene.glb';
 const HERO_URL = 'assets/mouth-clean/ToothExplorer.glb';
+const ENEMY_URL = 'assets/mouth-clean/SodaEnemy.glb';
+let enemyLoaded = false, enemyLoadFailed = false;
+let timeScale = 1;
 let disposed = false, elapsed = 0, timerId = 0;
 const timers = new Map();
 const setTimeout = (callback, delay) => { timers.set(++timerId, { callback, at: elapsed + delay }); return timerId; };
@@ -115,13 +118,20 @@ const tongueTex = (() => {
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.NoColorSpace;
   t.anisotropy = 4; return t;
 })();
+// ---- movement grid on the tongue ----
+// Cell size scales with the hero (0.5 world units at the original hero scale 0.31) unless cellSize is given.
+const CELL = cellSize ?? 0.5 * heroScale / 0.31;
+const cellCenter = (v) => (Math.floor(v / CELL) + 0.5) * CELL;
+const GRID_U = { uCellSize: { value: CELL }, uGridOn: { value: 1 },
+  uHeroCell: { value: new THREE.Vector2(9999, 9999) }, uTargetCell: { value: new THREE.Vector3(9999, 9999, 0) } };
 function tongueDetail(mat) {
   mat.customProgramCacheKey = () => 'tongueDetail';
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uTongueTex = { value: tongueTex };
+    Object.assign(sh.uniforms, GRID_U);
     sh.vertexShader = 'varying vec3 vTW;\n' + sh.vertexShader.replace('#include <begin_vertex>',
       '#include <begin_vertex>\n  vTW = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;');
-    sh.fragmentShader = 'varying vec3 vTW;\nuniform sampler2D uTongueTex;\n' + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+    sh.fragmentShader = 'varying vec3 vTW;\nuniform sampler2D uTongueTex;\nuniform float uCellSize;\nuniform float uGridOn;\nuniform vec2 uHeroCell;\nuniform vec3 uTargetCell;\n' + sh.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
       {
         vec4 fine = texture2D( uTongueTex, vTW.xz * 0.32 );          // small papillae + blotches
         vec4 big  = texture2D( uTongueTex, vTW.xz * 0.11 + 0.37 );   // bigger bumps
@@ -131,6 +141,23 @@ function tongueDetail(mat) {
         diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * vec3( 1.22, 1.35, 1.3 ), fine.r * 0.55 );   // soft lighter-pink dots
         diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * vec3( 0.86, 0.62, 0.66 ), big.g * ( 0.55 + 0.3 * back ) ); // deeper-red bumps
         diffuseColor.rgb *= 1.0 - 0.18 * back;                        // deeper colour toward the throat
+        // ---- grid ----
+        if ( uGridOn > 0.5 ) {
+          vec2 gc = vTW.xz / uCellSize;
+          vec2 toLine = 0.5 - abs( fract( gc ) - 0.5 );                // 0 on a grid line
+          vec2 aa = fwidth( gc );
+          float line = max( 1.0 - smoothstep( 0.0, aa.x * 1.4, toLine.x ), 1.0 - smoothstep( 0.0, aa.y * 1.4, toLine.y ) );
+          float fade = 1.0 - smoothstep( 1.2, 2.5, max( aa.x, aa.y ) * 10.0 );   // fade lines that get too dense far away
+          diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * 0.62, line * 0.75 * fade );
+          // the hero's cell: soft light fill
+          vec2 dh = abs( vTW.xz - uHeroCell ) / uCellSize;
+          float inHero = 1.0 - step( 0.5, max( dh.x, dh.y ) );
+          diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 1.0, 0.86, 0.9 ), inHero * 0.22 );
+          // optional target cell: warm yellow fill (uTargetCell.z = 1 to show)
+          vec2 dt = abs( vTW.xz - uTargetCell.xy ) / uCellSize;
+          float inTarget = ( 1.0 - step( 0.5, max( dt.x, dt.y ) ) ) * uTargetCell.z;
+          diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 1.0, 0.85, 0.45 ), inTarget * 0.35 );
+        }
       }`);
   };
   return mat;
@@ -157,7 +184,8 @@ function setCut(on) {
 
 // ======================= state =======================
 let hero, mixer, actions = {}, current, groundMeshes = [], germs = [], cleaned = 0, sideView = true;
-const S = { x: LANE_X, z: 4.5, y: 2, vy: 0, onGround: false, face: -1, fx: 0, fz: -1, busy: false, moving: false };   // face -1 → toward throat (screen right)
+const START_X = cellCenter(2.25), START_Z = cellCenter(3.25);   // a cell centre in the open, clear of the front teeth
+const S = { x: START_X, z: START_Z, y: 2, vy: 0, onGround: false, face: -1, fx: 0, fz: -1, busy: false, moving: false };   // face -1 → toward throat (screen right)
 const ray = new THREE.Raycaster(); const DOWN = new THREE.Vector3(0, -1, 0);
 const loader = new GLTFLoader();
 
@@ -265,7 +293,7 @@ function loadHero() {
     addXrayOutline(hero);
     mixer = new THREE.AnimationMixer(hero);
     for (const c of g.animations) actions[c.name] = mixer.clipAction(c);
-    for (const n of ['Poke', 'OverheadStrike', 'MarchAndWave']) { actions[n]?.setLoop(THREE.LoopOnce, 1); if (actions[n]) actions[n].clampWhenFinished = true; }
+    for (const n of ['Poke', 'OverheadStrike', 'MarchAndWave', 'HurtPunch', 'HurtSquirt']) { actions[n]?.setLoop(THREE.LoopOnce, 1); if (actions[n]) actions[n].clampWhenFinished = true; }
     mixer.addEventListener('finished', (e) => { if (e.action === current) { S.busy = false; } });
     S.y = groundBelow(S.z, 4); S.onGround = true;
     play('FightStance', 0);
@@ -276,6 +304,7 @@ function loadHero() {
     renderer.compile(scene, camera);
 
     flash('Scrub the germs! →');
+    loadEnemy();
   }, undefined, (e) => { loadingMessage = 'Could not load the hero: ' + (e.message || e); });
 }
 // ======================= x-ray outline: hero stays visible behind teeth =======================
@@ -303,12 +332,14 @@ xrayMask.onBeforeCompile = xrayShader(0.0);
 xrayLine.onBeforeCompile = xrayShader(XRAY_WIDTH);
 xrayMask.customProgramCacheKey = () => 'xrayMask';
 xrayLine.customProgramCacheKey = () => 'xrayLine';
-function addXrayOutline(root) {
+const xrayLines = { [XRAY_COLOR]: xrayLine };
+function addXrayOutline(root, color = XRAY_COLOR) {
+  const line = xrayLines[color] ??= (() => { const m = xrayLine.clone(); m.color.set(color); m.onBeforeCompile = xrayShader(XRAY_WIDTH); m.customProgramCacheKey = () => 'xrayLine'; return m; })();
   const bodies = [];
-  root.traverse((o) => { if (o.isMesh && !o.userData.xray && o.material.name !== 'Outline') bodies.push(o); });
+  root.traverse((o) => { if (o.isMesh && !o.userData.xray && !o.userData.noXray && o.material.name !== 'Outline') bodies.push(o); });
   for (const o of bodies) {
     o.renderOrder = 30;                                    // the hero's normal draw comes after the x-ray passes
-    for (const [mat, order] of [[xrayMask, 20], [xrayLine, 21]]) {
+    for (const [mat, order] of [[xrayMask, 20], [line, 21]]) {
       const c = o.clone(false);                            // shares geometry (and skeleton for skinned meshes)
       c.material = mat; c.renderOrder = order; c.castShadow = false; c.receiveShadow = false;
       c.userData.xray = true; c.raycast = () => {};
@@ -318,8 +349,9 @@ function addXrayOutline(root) {
   root.traverse((o) => { if (o.isMesh && o.material.name === 'Outline') o.renderOrder = 30; });
 }
 
-function play(name, fade = 0.2) {
-  const next = actions[name]; if (!next || next === current) return;
+function play(name, fade = 0.2, force = false) {
+  const next = actions[name]; if (!next || (next === current && !force)) return;
+  if (next === current) { next.reset().play(); return; }
   next.reset(); next.enabled = true; next.setEffectiveTimeScale(1); next.setEffectiveWeight(1); next.play();
   if (current) current.crossFadeTo(next, fade, false);
   current = next;
@@ -339,21 +371,26 @@ function toggleView() {
 
 // ======================= combat =======================
 function attack(name) {
-  if (!hero || S.busy || !S.onGround) return;
+  if (!hero || !enemyLoaded || S.busy || !S.onGround || HERO.hp <= 0) return;
+  if (name !== 'MarchAndWave') {
+    if (TURN.who !== 'hero') { flash("⏳ Wait – it's the enemy's turn"); return; }
+    if (TURN.attackUsed) { flash('Already attacked – retreat or end your turn'); return; }
+    TURN.attackUsed = true;
+  }
   S.busy = true; play(name, 0.08);
   if (name === 'MarchAndWave') return;
   const delay = name === 'Poke' ? 380 : 700, reach = name === 'Poke' ? 0.6 : 0.45, rad = name === 'Poke' ? 0.5 : 0.62;
-  setTimeout(() => {
+  later(delay, () => {
     const hz = S.z + S.fz * reach, hx = S.x + S.fx * reach; let hits = 0;
+    if (E.alive && enemy && Math.hypot(E.z - hz, E.x - hx) < rad + 0.25 && Math.abs(E.y - S.y) < 0.8) hurtEnemy(name);
     for (const g of germs) {
       if (!g.alive) continue;
       if (Math.hypot(g.z - hz, g.x - hx) < rad && Math.abs(g.y - S.y) < 0.75) { g.alive = false; hits++; burst(g.g.position.clone().setY(g.y + 0.2)); }
     }
-    if (hits) { cleaned += hits; flash(cleaned === germs.length ? '✨ Sparkling clean! You win! ✨' : (hits > 1 ? `Combo ×${hits}!` : 'Scrubbed!')); }
+    if (hits) { cleaned += hits;  flash(cleaned === germs.length ? '✨ Sparkling clean! You win! ✨' : (hits > 1 ? `Combo ×${hits}!` : 'Scrubbed!')); }
     else burst(new THREE.Vector3(hx, S.y + 0.4, hz), 6, '#d8f1ff');
-  }, delay);
+  });
 }
-
 let msgT;
 function flash(message) {
   flashMessage = message;
@@ -373,6 +410,362 @@ function burst(at, n = 24, color = '#ffffff') {
     parts.push({ m, s0, v: new THREE.Vector3((Math.random() - .5) * 0.8, Math.random() * 2.2 + 0.6, (Math.random() - .5) * 2.4), life: 0.8 + Math.random() * 0.5 });
     scene.add(m);
   }
+}
+
+function later(ms, callback) { return setTimeout(callback, ms); }
+
+// ======================= soda-bottle enemy =======================
+const ENEMY_SCALE = 0.33 * heroScale / 0.31;                      // a bit taller than the hero (bottle ≈ 0.95 units)
+const SQUIRT_CELLS = 3, PUNCH_CELLS = 1;       // attack ranges in grid cells
+const E_WALK = 0.95, E_COOLDOWN = 3.2;
+const E = { x: 0, z: 0, y: 0, face: 1, fx: 0, fz: 1, hp: 100, alive: false, busy: false, cool: 1.5, forced: null,
+  kb: null, stuck: 0, moving: false, dead: 0 };
+const HERO = { hp: 100, hurt: false };
+let enemy, eMixer, eActions = {}, eCurrent, eNeck;
+const tintable = { hero: [], enemy: [] };
+
+function loadEnemy() {
+  loader.load(ENEMY_URL, (g) => {
+    if (disposed) { disposeObject(g.scene); return; }
+    enemy = g.scene; enemy.scale.setScalar(ENEMY_SCALE);
+    enemy.traverse((o) => {
+      if (o.isBone && o.name === 'neck') eNeck = o;
+      if (!o.isMesh) return;
+      o.castShadow = true;
+      const conv = (m) => {
+        if (m.name === 'Outline') return new THREE.MeshBasicMaterial({ color: 0x05060a, side: THREE.FrontSide, name: 'Outline' });
+        if (m.name === 'S_Plastic') { o.castShadow = false; o.userData.noXray = true;
+          return toon({ color: '#d8ecff', transparent: true, opacity: 0.3, depthWrite: false, side: THREE.FrontSide, name: m.name }); }
+        const c = m.name === 'S_Soda' ? '#5a1c08' : m.color;
+        const e = m.emissive && (m.emissive.r + m.emissive.g + m.emissive.b) > 0.01;
+        const t = toon({ color: c, emissive: e ? m.emissive : 0x000000, emissiveIntensity: e ? 1.5 : 0, side: THREE.FrontSide, name: m.name });
+        tintable.enemy.push(t); return t;
+      };
+      o.material = Array.isArray(o.material) ? o.material.map(conv) : conv(o.material);
+    });
+    scene.add(enemy);
+    addXrayOutline(enemy, '#ff5d5d');
+    eMixer = new THREE.AnimationMixer(enemy);
+    for (const c of g.animations) eActions[c.name] = eMixer.clipAction(c);
+    for (const n of ['S_Squirt', 'S_Punch', 'S_Hit']) { eActions[n]?.setLoop(THREE.LoopOnce, 1); if (eActions[n]) eActions[n].clampWhenFinished = true; }
+    eMixer.addEventListener('finished', (e) => { if (e.action === eCurrent) E.busy = false; });
+    hero.traverse((o) => { if (o.isMesh && o.material.isMeshToonMaterial) tintable.hero.push(o.material); });
+    spawnEnemy(cellCenter(S.z - 5 * CELL));
+    startTurn('hero'); TURN.n = 1;
+    enemyLoaded = true;
+    applyQuality();
+    renderer.compile(scene, camera);
+  }, undefined, (e) => { enemyLoadFailed = true; loadingMessage = 'Could not load the soda enemy: ' + (e.message || e); });
+}
+function ePlay(name, fade = 0.15, force = false) {
+  const next = eActions[name]; if (!next || (next === eCurrent && !force)) return;
+  if (next === eCurrent) { next.reset().play(); return; }
+  next.reset(); next.enabled = true; next.setEffectiveTimeScale(1); next.setEffectiveWeight(1); next.play();
+  if (eCurrent) eCurrent.crossFadeTo(next, fade, false);
+  eCurrent = next;
+}
+function spawnEnemy(z) {
+  E.x = cellCenter(LANE_X); E.z = THREE.MathUtils.clamp(z, Z_MIN + 0.5, Z_MAX - 0.5);
+  E.y = groundBelow(E.z, 4, E.x); E.hp = 100; E.alive = true; E.busy = false; E.dead = 0; E.cool = 1.5; E.kb = null;
+  enemy.visible = true; enemy.scale.setScalar(ENEMY_SCALE); ePlay('S_Idle', 0);
+}
+
+// ======================= turns =======================
+// One turn each, max 1 minute. On your turn: walk anywhere, attack ONCE, then you can still walk (retreat).
+// Enemy turn: the bottle walks up, attacks once (squirt from 3 cells or punch from 1), then retreats.
+const TURN_TIME = 60;
+const TURN = { who: 'hero', left: TURN_TIME, attackUsed: false, phase: null, plan: null, wait: 0, retreat: null, n: 1 };
+function startTurn(who) {
+  TURN.who = who; TURN.left = TURN_TIME; TURN.attackUsed = false; TURN.retreat = null; TURN.n++;
+  if (who === 'enemy') {
+    TURN.phase = 'think'; TURN.wait = 0.9; TURN.goal = null; TURN.prog = null; TURN.t = 0; TURN.retried = false; keys.clear();
+    flash('🥤 Enemy turn');
+  } else { TURN.phase = null; TURN.plan = null; flash('🦷 Your turn – move, attack once, retreat'); }
+
+}
+function endTurn() {
+  if (TURN.who === 'hero') {
+    if (E.alive) startTurn('enemy');
+    else { startTurn('hero'); flash('The soda is fizzed out – your turn again'); }
+  } else startTurn('hero');
+}
+function endTurnButton() { if (TURN.who === 'hero' && !S.busy && hero && enemy) endTurn(); }
+function updateTurn(dt) {
+  if (!hero || !enemy) return;
+  TURN.left -= dt;
+  if (TURN.left <= 0) {
+    if (TURN.who === 'hero' && !S.busy) { flash("⏰ Time's up!"); endTurn(); }
+    else if (TURN.who === 'enemy' && !E.busy) endTurn();
+  }
+}
+// in range for an attack right now? (distances in world units; CELL = 0.5)
+function inRange(kind, loose = false) {
+  const d = Math.hypot(S.x - E.x, S.z - E.z) / CELL, dy = Math.abs(S.y - E.y);
+  if (kind === 'punch') return d <= Math.min(PUNCH_CELLS + 0.6, PUNCH_CELLS + 0.4 / CELL) && dy < 0.45;
+  return loose ? d >= 1.8 && d <= 4.6                          // squirt: any height; 3 cells ideally, 2–4.5 if blocked
+               : d >= SQUIRT_CELLS - 0.45 && d <= SQUIRT_CELLS + 0.45;
+}
+// best cell to walk to: at the right ring of cells around the hero, walkable, closest to the enemy
+function pickSpot(kind, any = false) {
+  const hx = cellCenter(S.x), hz = cellCenter(S.z);
+  const rings = kind === 'punch' ? [1] : kind === 'squirt' ? [3, 2, 4] : [5, 4, 6];
+  let best = null, bestD = Infinity;
+  for (const r of rings) {
+    for (let i = -r; i <= r; i++) for (let j = -r; j <= r; j++) {
+      if (Math.max(Math.abs(i), Math.abs(j)) !== r) continue;
+      const x = hx + i * CELL, z = hz + j * CELL;
+      if (x < X_MIN || x > X_MAX || z < Z_MIN || z > Z_MAX) continue;
+      const g = groundBelow(z, Math.max(S.y, E.y) + 0.6, x);
+      if (g < -40 || Math.abs(g - E.y) > 0.6) continue;                 // must be ground at about our height
+      if (kind === 'punch' && Math.abs(g - S.y) > 0.4) continue;
+      const d = Math.hypot(x - E.x, z - E.z) + (kind === 'retreat' ? 0 : Math.abs(i) * 0.15);   // prefer the hero's lane
+      if (d < bestD) { bestD = d; best = { x, z }; }
+    }
+    if (best && !any) break;
+  }
+  return best || { x: E.x, z: E.z };
+}
+// true when the enemy has been trying to walk for ~0.8 s without getting meaningfully closer to its goal
+function noProgress(dt) {
+  const g = TURN.goal ?? TURN.retreat; if (!g) return false;
+  const d = Math.hypot(g.x - E.x, g.z - E.z);
+  if (!TURN.prog || d < TURN.prog.best - 0.04) { TURN.prog = { best: d, t: 0 }; return false; }
+  return (TURN.prog.t += dt) > 0.8;
+}
+function enemyPlan() {
+  // close already → punch; otherwise mostly squirt from range (it's safer), sometimes rush in for a punch
+  const cells = Math.hypot(S.x - E.x, S.z - E.z) / CELL;
+  if (cells <= 2.2) return 'punch';
+  return Math.random() < 0.6 ? 'squirt' : 'punch';
+}
+
+// a quick red/white flash on whoever gets hit
+function tint(list, color) {
+  for (const m of list) { m.userData.e0 ??= { c: m.emissive.clone(), i: m.emissiveIntensity }; m.emissive.set(color); m.emissiveIntensity = 0.9; }
+  later(110, () => { for (const m of list) { m.emissive.copy(m.userData.e0.c); m.emissiveIntensity = m.userData.e0.i; } });
+}
+
+// Test buttons: the enemy walks into the right range, then attacks straight away.
+// They end your turn and make the enemy use that attack on its turn.
+function testEnemyAttack(kind) {
+  if (!enemy || !hero) return;
+  if (TURN.who !== 'hero' || S.busy) { flash("⏳ Wait for your turn"); return; }
+  if (!E.alive) spawnEnemy(cellCenter(S.z - 5 * CELL));
+  E.forced = kind; E.stuck = 0;
+  startTurn('enemy'); TURN.wait = 0.4;
+  flash(kind === 'squirt' ? `🥤 Enemy turn: squirt from ${SQUIRT_CELLS} cells` : '👊 Enemy turn: punch');
+}
+function attackSpot(cells) {
+  // stand on the hero's lane, `cells` cells away, on whichever side the enemy already is (or the open side)
+  let side = Math.sign(E.z - S.z) || -1;
+  const z = (sd) => cellCenter(S.z + sd * cells * CELL);
+  const ok = (zz) => zz > Z_MIN && zz < Z_MAX && (() => { const g = groundBelow(zz, S.y + STEP * 0.8 + 0.4, cellCenter(S.x)); return g > -40 && Math.abs(g - S.y) < 0.5; })();
+  if (!ok(z(side)) && ok(z(-side))) side = -side;
+  return { x: cellCenter(S.x), z: z(side) };
+}
+
+function enemyAttack(kind) {
+  E.busy = true; E.cool = E_COOLDOWN; E.forced = null; E.moving = false;
+  faceHero();
+  if (kind === 'punch') {
+    ePlay('S_Punch', 0.08);
+    later(520, () => {                     // glove lands at frame 13
+      if (!E.alive) return;
+      const d = Math.hypot(S.x - E.x, S.z - E.z);
+      if (d < PUNCH_CELLS * CELL + 0.45 && Math.abs(S.y - E.y) < 0.55) hurtHero('punch', 14);
+      else burst(new THREE.Vector3(E.x + E.fx * 0.4, E.y + 0.35, E.z + E.fz * 0.4), 6, '#ffd2d2');
+    });
+  } else {
+    ePlay('S_Squirt', 0.08);
+    E.squirt = { from: 0.62, to: 1.22, acc: 0, hit: false };
+  }
+}
+function faceHero() { const dx = S.x - E.x, dz = S.z - E.z, d = Math.hypot(dx, dz) || 1; E.fx = dx / d; E.fz = dz / d; if (dz) E.face = dz > 0 ? 1 : -1; }
+
+// ---- soda stream: brown droplets from the cap, flying in an arc at the hero's chest ----
+const sodaDrops = []; const SODA_COLS = ['#4a1606', '#6b2a0c', '#8a4316', '#b9763d'];
+const capPos = new THREE.Vector3(), capDir = new THREE.Vector3();
+function sprayDroplet() {
+  if (eNeck) { eNeck.updateWorldMatrix(true, false); capPos.set(0, 1.18, 0); eNeck.localToWorld(capPos); }
+  else capPos.set(E.x, E.y + 0.95, E.z);
+  const tx = S.x, ty = S.y + 0.42, tz = S.z, T = 0.32 + Math.random() * 0.06;
+  const v = new THREE.Vector3((tx - capPos.x) / T, (ty - capPos.y + 0.5 * 9 * T * T) / T, (tz - capPos.z) / T);
+  v.x += (Math.random() - .5) * 0.25; v.y += (Math.random() - .5) * 0.3; v.z += (Math.random() - .5) * 0.25;
+  const m = new THREE.Mesh(foamGeo, foamMat(SODA_COLS[(Math.random() * 3) | 0]));
+  const s0 = 0.55 + Math.random() * 0.75; m.scale.setScalar(s0); m.position.copy(capPos); scene.add(m);
+  sodaDrops.push({ m, v, s0, life: 1.1 });
+}
+function sodaSplash(at, n = 10) {
+  for (let i = 0; i < n; i++) {
+    const m = new THREE.Mesh(foamGeo, foamMat(SODA_COLS[(Math.random() * 4) | 0])); const s0 = 0.4 + Math.random() * 0.8;
+    m.position.copy(at); m.scale.setScalar(s0); scene.add(m);
+    parts.push({ m, s0, v: new THREE.Vector3((Math.random() - .5) * 1.6, Math.random() * 1.8 + 0.3, (Math.random() - .5) * 1.6), life: 0.4 + Math.random() * 0.4 });
+  }
+}
+function updateSoda(dt) {
+  const sq = E.squirt;
+  if (sq && eCurrent === eActions.S_Squirt) {
+    const at = eCurrent.time;
+    if (at >= sq.from && at <= sq.to) { sq.acc += dt; while (sq.acc > 0.014) { sq.acc -= 0.014; sprayDroplet(); } }
+    if (at > sq.to + 0.6) E.squirt = null;
+  }
+  const chest = new THREE.Vector3(S.x, S.y + 0.42, S.z);
+  for (let i = sodaDrops.length - 1; i >= 0; i--) {
+    const p = sodaDrops[i]; p.life -= dt; p.v.y -= 9 * dt; p.m.position.addScaledVector(p.v, dt);
+    let gone = p.life <= 0;
+    if (!gone && p.m.position.distanceTo(chest) < 0.3) {
+      gone = true; if (Math.random() < 0.5) sodaSplash(p.m.position, 3);
+      if (E.squirt && !E.squirt.hit) { E.squirt.hit = true; hurtHero('squirt', 10); }
+    }
+    if (!gone && p.m.position.y < Math.min(S.y, E.y) - 0.02) { gone = true; sodaSplash(p.m.position, 2); }
+    if (gone) { scene.remove(p.m); sodaDrops.splice(i, 1); }
+  }
+}
+
+// ---- getting hurt ----
+function hurtHero(kind, dmg) {
+  if (!hero || HERO.hp <= 0) return;
+  HERO.hp -= dmg;  tint(tintable.hero, '#ff3030');
+  // turn toward the attacker so we see the hit from the front, then get pushed away from him
+  const dx = E.x - S.x, dz = E.z - S.z, d = Math.hypot(dx, dz) || 1;
+  S.fx = dx / d; S.fz = dz / d; if (dz) S.face = dz > 0 ? 1 : -1;
+  hero.rotation.y = Math.atan2(S.fx, S.fz);
+  S.kb = { x: -S.fx * (kind === 'punch' ? 1.6 : 0.9), z: -S.fz * (kind === 'punch' ? 1.6 : 0.9) };
+
+  S.busy = true; play(kind === 'punch' ? 'HurtPunch' : 'HurtSquirt', 0.06, true);
+  if (kind === 'squirt') sodaSplash(new THREE.Vector3(S.x, S.y + 0.45, S.z), 16);
+  else burst(new THREE.Vector3(S.x - S.fx * 0.05, S.y + 0.35, S.z + S.fz * 0.12), 10, '#fff4c8');
+  closeUp('hero', kind === 'punch' ? '👊 Punched in the tummy!' : '🥤 Soda in the face!');
+  if (HERO.hp <= 0) later(1300, () => {
+    flash('💦 Fizzed out! Back to the start'); HERO.hp = 100;
+    S.x = START_X; S.z = START_Z; S.y = groundBelow(S.z, 4); S.kb = null; S.busy = false; play('FightStance', 0.1);
+    spawnEnemy(cellCenter(S.z - 6 * CELL)); startTurn('hero');
+  });
+}
+function hurtEnemy(how) {
+  const dmg = how === 'Poke' ? 20 : 34;
+  E.hp -= dmg;  tint(tintable.enemy, '#ffffff');
+  E.busy = true; E.squirt = null; E.forced = null; E.cool = Math.max(E.cool, 1.2);
+  const dx = E.x - S.x, dz = E.z - S.z, d = Math.hypot(dx, dz) || 1;
+  E.fx = -dx / d; E.fz = -dz / d;
+  E.kb = { x: dx / d * (how === 'Poke' ? 1.2 : 1.8), z: dz / d * (how === 'Poke' ? 1.2 : 1.8) };
+  ePlay('S_Hit', 0.05, true);
+  sodaSplash(new THREE.Vector3(E.x, E.y + 0.55, E.z), 14);
+  if (E.hp <= 0) { E.alive = false; E.dead = 0.001; closeUp('enemy', '🎉 Soda bottle defeated!'); }
+  else closeUp('enemy', how === 'Poke' ? '🪥 Poke!' : '💥 Smash!');
+}
+function applyKnockback(o, dt) {
+  if (!o.kb) return;
+  const nx = THREE.MathUtils.clamp(o.x + o.kb.x * dt, X_MIN, X_MAX), nz = THREE.MathUtils.clamp(o.z + o.kb.z * dt, Z_MIN, Z_MAX);
+  const g = groundBelow(nz, o.y + STEP * 0.8, nx);
+  if (g > -40 && g < o.y + STEP && g > o.y - 0.7) { o.x = nx; o.z = nz; }
+  const k = Math.exp(-dt * 6); o.kb.x *= k; o.kb.z *= k;
+  if (Math.hypot(o.kb.x, o.kb.z) < 0.05) o.kb = null;
+}
+
+// ---- enemy brain ----
+function updateEnemy(dt, t) {
+  if (!enemy || !hero) return;
+  if (!E.alive) {                                   // defeated: pop into fizz, respawn a bit later
+    if (E.dead > 0) {
+      E.dead += dt;
+      if (E.dead > 0.7) { const s = Math.max(0, 1 - (E.dead - 0.7) * 3); enemy.scale.setScalar(ENEMY_SCALE * s); if (s <= 0 && enemy.visible) { enemy.visible = false; sodaSplash(new THREE.Vector3(E.x, E.y + 0.4, E.z), 30); } }
+      if (E.dead > 5) spawnEnemy(cellCenter(S.z - 6 * CELL) < Z_MIN + 1 ? cellCenter(S.z + 6 * CELL) : cellCenter(S.z - 6 * CELL));
+    }
+    eMixer.update(dt); return;
+  }
+  applyKnockback(E, dt);
+  E.cool -= dt;
+  let mx = 0, mz = 0;
+  const dx = S.x - E.x, dz = S.z - E.z, dist = Math.hypot(dx, dz), cells = dist / CELL;
+  if (!E.busy && HERO.hp > 0) {
+    let goal = null, arrive = null;
+    if (TURN.who === 'enemy' && !S.busy) {
+      if (TURN.phase === 'think') {
+        if ((TURN.wait -= dt) <= 0) { TURN.plan = E.forced || enemyPlan(); E.forced = null; TURN.phase = 'approach'; E.stuck = 0;  }
+      } else if (TURN.phase === 'approach') {
+        // attack as soon as we're in range for the plan – no need to hit an exact cell
+        if (inRange(TURN.plan)) { TURN.phase = 'attacking';  enemyAttack(TURN.plan); }
+        else {
+          TURN.goal ??= pickSpot(TURN.plan);
+          goal = TURN.goal;
+          arrive = () => { if (inRange(TURN.plan, true)) { TURN.phase = 'attacking';  enemyAttack(TURN.plan); } else TURN.goal = null; };
+          if (noProgress(dt) || (TURN.t += dt) > 9) {     // blocked (ledge, tooth, edge…): adapt
+            const alt = TURN.plan === 'punch' ? 'squirt' : 'punch';
+            if (inRange(TURN.plan, true) || inRange(alt, true)) { if (!inRange(TURN.plan, true)) TURN.plan = alt; const alt2 = TURN.plan;
+              TURN.phase = 'attacking';  enemyAttack(alt2); }
+            else if (false) { TURN.plan = alt; TURN.phase = 'attacking';  enemyAttack(alt); }
+            else if (!TURN.retried) { TURN.retried = true; TURN.plan = 'squirt'; TURN.goal = pickSpot('squirt', true); TURN.prog = null; }
+            else { flash("🥤 The soda can't reach you!"); TURN.phase = 'done'; TURN.wait = 0.6;  }
+          }
+        }
+      } else if (TURN.phase === 'attacking') {             // the attack animation has finished
+        TURN.retreat = pickSpot('retreat'); TURN.phase = 'retreat'; TURN.prog = null; TURN.t = 0;
+      } else if (TURN.phase === 'retreat') {
+        goal = TURN.retreat;
+        arrive = () => { TURN.phase = 'done'; TURN.wait = 0.7;  };
+        if (noProgress(dt) || (TURN.t += dt) > 6) arrive();
+      } else if (TURN.phase === 'done') {
+        if ((TURN.wait -= dt) <= 0) endTurn();
+      }
+    }
+    if (goal) {
+      const gx = goal.x - E.x, gz = goal.z - E.z, gd = Math.hypot(gx, gz);
+      if (gd < 0.04) { E.x = goal.x; E.z = goal.z; arrive?.(); }
+      else { mx = gx / gd; mz = gz / gd; }
+    }
+  }
+  E.moving = !!(mx || mz);
+  if (E.moving) {
+    E.fx = mx; E.fz = mz; const sp = E_WALK * 1.25;
+    const nx = THREE.MathUtils.clamp(E.x + mx * sp * dt, X_MIN, X_MAX), nz = THREE.MathUtils.clamp(E.z + mz * sp * dt, Z_MIN, Z_MAX);
+    const g = groundBelow(nz, E.y + STEP * 0.8, nx);
+    if (g > -40 && g < E.y + STEP && g > E.y - 0.7) { E.x = nx; E.z = nz; E.stuck = 0; }
+    else E.stuck += dt;
+  } else if (!E.busy) faceHero();
+  // don't walk through the hero
+  const sep = Math.hypot(S.x - E.x, S.z - E.z);
+  if (sep < 0.38 && sep > 1e-4) { const k = (0.38 - sep) / sep; E.x -= (S.x - E.x) * k; E.z -= (S.z - E.z) * k; }
+  const g = groundBelow(E.z, E.y + STEP * 0.7, E.x);
+  if (g > -40) E.y = THREE.MathUtils.lerp(E.y, g, 0.5);
+  if (!E.busy) ePlay(E.moving ? 'S_Walk' : 'S_Idle', 0.2);
+  if (E.moving) eActions.S_Walk?.setEffectiveTimeScale(1.7);
+  enemy.position.set(E.x, E.y, E.z);
+  const want = Math.atan2(E.fx, E.fz);
+  enemy.rotation.y += Math.atan2(Math.sin(want - enemy.rotation.y), Math.cos(want - enemy.rotation.y)) * Math.min(1, dt * 12);
+  eMixer.update(dt);
+}
+
+// ---- close-up camera on whoever is hurt, with a short slow-motion ----
+const CU = { who: null, t: 0, dur: 1.7, side: 1 };
+const cuPos = new THREE.Vector3(), cuLook = new THREE.Vector3();
+function closeUp(who, text) {
+  CU.who = who; CU.t = 0;
+  const vz = who === 'hero' ? S.z : E.z, az = who === 'hero' ? E.z : S.z;
+  CU.side = Math.sign(az - vz) || 1;                    // look a little from the attacker's side
+  if (text) flash(text);
+}
+function applyCloseUp(rdt) {
+  if (!CU.who) { timeScale = 1; return; }
+  CU.t += rdt;
+  const p = CU.t / CU.dur;
+  if (p >= 1) { CU.who = null; timeScale = 1; return; }
+  // ease in fast, hold, ease out
+  const w = THREE.MathUtils.smoothstep(CU.t, 0, 0.18) * (1 - THREE.MathUtils.smoothstep(CU.t, CU.dur - 0.45, CU.dur));
+  timeScale = THREE.MathUtils.lerp(1, 0.35, THREE.MathUtils.smoothstep(CU.t, 0, 0.1) * (1 - THREE.MathUtils.smoothstep(CU.t, 0.9, 1.3)));
+  const vx = CU.who === 'hero' ? S.x : E.x, vy = CU.who === 'hero' ? S.y : E.y, vz = CU.who === 'hero' ? S.z : E.z;
+  const h = CU.who === 'hero' ? 0.42 : 0.5;
+  // look from the attacker's side, in front of the victim, so we see the face / the impact
+  const ax = CU.who === 'hero' ? E.x : S.x, az = CU.who === 'hero' ? E.z : S.z;
+  const gap = THREE.MathUtils.clamp(Math.hypot(ax - vx, az - vz), 0.3, 1.6);
+  cuLook.set(vx, vy + h, vz + CU.side * Math.min(0.35, gap * 0.3));
+  const swing = CU.who === 'hero' ? 1.6 : 0.8;          // less swing for the enemy: the front teeth sit on the hero's side
+  cuPos.set(vx + 2.4, vy + h + 0.5, vz + CU.side * swing);
+  camera.position.lerpVectors(camPos, cuPos, w);
+  const look = new THREE.Vector3().lerpVectors(camLook, cuLook, w);
+  camera.lookAt(look);
+  // keep the cut-away in front of the victim so nothing blocks the view
+  const cx = Math.max(S.x, vx) + CUT_AHEAD; cutPlane.constant = cx; ghostPlane.constant = -cx;
 }
 
 // ======================= camera =======================
@@ -604,7 +997,7 @@ function resize(width, height) {
   camera.updateProjectionMatrix();
 }
 function update(deltaMs) {
-  const dt = Math.min(deltaMs / 1000, 0.05);
+  const dt = Math.min(deltaMs / 1000, 0.05) * timeScale;
   elapsed += dt * 1000;
   const t = elapsed / 1000;
   for (const [id, timer] of timers) {
@@ -616,6 +1009,8 @@ function update(deltaMs) {
     const up = keys.has('w') || keys.has('arrowup'), down = keys.has('s') || keys.has('arrowdown');
     let mz = (left ? 1 : 0) - (right ? 1 : 0);          // +1 → toward the lips
     let mx = (down ? 1 : 0) - (up ? 1 : 0);             // +1 → toward the camera
+    if (TURN.who !== 'hero') { mx = 0; mz = 0; }
+    if (S.busy && S.onGround) { mx = 0; mz = 0; }          // no walking while attacking / hurt
     const ml = Math.hypot(mx, mz);
     S.moving = ml > 0;
     const canMove = !S.busy || !S.onGround;
@@ -634,6 +1029,21 @@ function update(deltaMs) {
       if (gx > -40 && gx < S.y + STEP && gx > S.y - 0.7) S.x = nx;
       actions.Walk?.setEffectiveTimeScale(run ? 2.6 : 1.6);
     }
+    applyKnockback(S, dt);
+    // grid snap: when he stops walking, glide smoothly into the centre of the nearest cell
+    S.snapDist = 0;
+    if (!ml && !S.busy && S.onGround) {
+      const cx = THREE.MathUtils.clamp(cellCenter(S.x), X_MIN, X_MAX), cz = THREE.MathUtils.clamp(cellCenter(S.z), Z_MIN, Z_MAX);
+      const dx = cx - S.x, dz = cz - S.z, d = Math.hypot(dx, dz);
+      if (d > 0.002) {
+        const gc = groundBelow(cz, S.y + STEP * 0.8, cx);               // only snap onto walkable ground
+        if (gc > -40 && gc < S.y + STEP && gc > S.y - 0.7) {
+          const k = Math.min(1, Math.max(dt * 9, (0.9 * dt) / d));     // ease in, but never slower than ~0.9 u/s
+          S.x += dx * k; S.z += dz * k; S.snapDist = d;
+        }
+      } else { S.x = cx; S.z = cz; }
+    }
+    GRID_U.uHeroCell.value.set(cellCenter(S.x), cellCenter(S.z));
     // gravity / ground
     const g = groundBelow(S.z, S.y + STEP * 0.7); S.ground = g;
     if (S.onGround) {
@@ -643,10 +1053,11 @@ function update(deltaMs) {
     if (!S.onGround) {
       S.vy -= GRAV * dt; S.y += S.vy * dt;
       if (S.vy <= 0 && S.y <= g) { S.y = g; S.vy = 0; S.onGround = true; }
-      if (S.y < -12) { S.x = LANE_X; S.z = 4.5; S.y = groundBelow(S.z, 4); S.vy = 0; S.onGround = true; flash('Whoops! Back to the start'); }
+      if (S.y < -12) { S.x = START_X; S.z = START_Z; S.y = groundBelow(S.z, 4); S.vy = 0; S.onGround = true; flash('Whoops! Back to the start'); }
     }
     // animation state
-    if (!S.busy) play(S.moving ? 'Walk' : 'FightStance', 0.18);
+    if (!S.busy) play(S.moving || S.snapDist > 0.07 ? 'Walk' : 'FightStance', 0.18);
+    if (!S.moving && S.snapDist > 0.07) actions.Walk?.setEffectiveTimeScale(1.2);   // short settling steps
 
     hero.position.set(S.x, S.y, S.z);
     const wantYaw = Math.atan2(S.fx, S.fz);                    // model faces +Z
@@ -663,8 +1074,12 @@ function update(deltaMs) {
       const t = camTarget(), want = (cam.follow ? S.z - S.face * 0.5 : cam.freeZ) + cam.panZ;
       cam.panZ += t.zc - want;           // don't let pan accumulate past the edges
       placeCamera(false);
+      applyCloseUp(Math.min(deltaMs / 1000, 0.05));
     } else controls.update();
   }
+  updateTurn(dt);
+  updateEnemy(dt, t);
+  updateSoda(dt);
   for (const g of germs) {
     if (g.alive) { g.g.scale.y = 1 + Math.sin(t * 3 + g.phase) * 0.06; g.g.rotation.y = Math.sin(t * 1.3 + g.phase) * 0.25; }
     else if (g.g.visible) { g.t += dt * 3; const s = Math.max(0, 1 - g.t); g.g.scale.setScalar(s); g.g.position.y += dt; if (s <= 0) g.g.visible = false; }
@@ -678,14 +1093,14 @@ function update(deltaMs) {
   if (hero) autoTune(deltaMs / 1000);
   if (hero && blobShadow.visible) { blobShadow.position.set(S.x, (S.ground ?? S.y) + 0.02, S.z); blobShadow.scale.setScalar(THREE.MathUtils.clamp(1 - (S.y - (S.ground ?? S.y)) * 0.6, 0.45, 1)); }
   if (uvula) uvula.rotation.x = Math.sin(t * 0.9) * 0.05, uvula.rotation.z = Math.sin(t * 0.7 + 1) * 0.04;
-  if (!Number.isFinite(S.x + S.y + S.z)) { S.x = LANE_X; S.z = 4.5; S.y = groundBelow(S.z, 4); S.vy = 0; S.onGround = true; }
+  if (!Number.isFinite(S.x + S.y + S.z)) { S.x = START_X; S.z = START_Z; S.y = groundBelow(S.z, 4); S.vy = 0; S.onGround = true; }
   if (!Number.isFinite(camera.position.x + camera.position.y + camera.position.z)) placeCamera(true);
 }
 setQuality(quality);
 return {
   canvas, update, setQuality,
   render(width, height) { resize(width, height); renderer.render(scene, camera); },
-  status() { return { loading: !hero, message: loadingMessage, cleaned, total: germs.length, flash: flashMessage, qualityMode, qualityLevel: qualityMode === 'auto' ? autoLevel : qualityMode }; },
+  status() { return { loading: !hero || (!enemyLoaded && !enemyLoadFailed), message: loadingMessage, error: enemyLoadFailed ? loadingMessage : '', cleaned, total: germs.length, flash: flashMessage, qualityMode, qualityLevel: qualityMode === 'auto' ? autoLevel : qualityMode, heroHp: Math.max(0, HERO.hp), enemyHp: Math.max(0, E.hp), enemyAlive: E.alive, enemyReady: enemyLoaded, turn: TURN.who, turnSeconds: Math.max(0, Math.ceil(TURN.left)), attackUsed: TURN.attackUsed, enemyPhase: TURN.phase }; },
   pan(dx, dy) {
     const worldPerPixel = 2 * halfWidth(cam.dist) / viewWidth;
     cam.panZ += dx * worldPerPixel;
@@ -696,8 +1111,13 @@ return {
     const mapped = { left: 'arrowleft', right: 'arrowright', up: 'arrowup', down: 'arrowdown' }[key];
     if (mapped) { if (down) keys.add(mapped); else keys.delete(mapped); }
     if (!down) return;
-    if (key === 'enter' || key === 'poke') attack('Poke');
+    if (key === 'enter') { if (TURN.attackUsed) endTurnButton(); else attack('Poke'); }
+    if (key === 'poke') attack('Poke');
+    if (key === 'end-turn') endTurnButton();
+    if (key === 'test-punch') testEnemyAttack('punch');
+    if (key === 'test-squirt') testEnemyAttack('squirt');
     if (key === 'smash') attack('OverheadStrike');
+    if (key === 'grid') { GRID_U.uGridOn.value = GRID_U.uGridOn.value ? 0 : 1; flash(GRID_U.uGridOn.value ? 'Grid on' : 'Grid off'); }
     if (key === 'jump') jump();
     if (key === 'view') toggleView();
     if (key === 'quality') cycleQuality();
@@ -710,6 +1130,7 @@ return {
     timers.clear();
     controls.dispose();
     mixer?.stopAllAction();
+    eMixer?.stopAllAction();
     scene.traverse((object) => object.shadow?.dispose());
     disposeObject(scene);
     tongueTex.dispose();

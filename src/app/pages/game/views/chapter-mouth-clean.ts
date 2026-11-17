@@ -7,8 +7,9 @@ export class ChapterMouthClean implements ScreenView {
   readonly id = 'chapter-mouth-clean' as const;
   readonly animated = true;
   readonly briefing = {
-    text: '**Mouth clean**\nMove with the arrows. Enter pokes. Drag to pan. Pinch to zoom.',
+    text: '**Mouth clean**\nMove with the arrows. Enter pokes, then ends your turn. Drag to pan. Pinch to zoom.',
     fontSize: 15,
+    character: 'assets/e-ink/doc.png',
   };
 
   /** Uniform model scale. The original hero scale was 0.31. */
@@ -50,8 +51,21 @@ export class ChapterMouthClean implements ScreenView {
       unit * 3,
       unit * 3,
     );
-    if (this.error || status?.loading) {
-      ctx.fillText(this.error || status?.message || '', unit * 3, unit * 38, width - unit * 6);
+    if (status?.enemyReady) {
+      ctx.font = font(frame, 3.5, 600);
+      ctx.fillText(
+        `HP ${status.heroHp}  |  Soda ${status.enemyHp}  |  ${status.turn === 'hero' ? 'Your turn' : 'Soda turn'} ${status.turnSeconds}s`,
+        unit * 3, unit * 9,
+      );
+      ctx.fillText(
+        status.turn === 'hero'
+          ? status.attackUsed ? 'Enter ends turn' : 'Enter pokes'
+          : `Soda ${status.enemyPhase ?? 'thinking'}`,
+        unit * 3, unit * 14,
+      );
+    }
+    if (this.error || status?.error || status?.loading) {
+      ctx.fillText(this.error || status?.error || status?.message || '', unit * 3, unit * 38, width - unit * 6);
     }
     if (status?.flash) ctx.fillText(status.flash, unit * 3, unit * 69, width - unit * 6);
   }

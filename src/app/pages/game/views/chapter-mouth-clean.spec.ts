@@ -1,5 +1,5 @@
 import { ChapterMouthClean } from './chapter-mouth-clean';
-﻿import { createMouthClean, MouthCleanRuntime } from './mouth-clean-runtime';
+import { createMouthClean, MouthCleanRuntime } from './mouth-clean-runtime';
 
 // Exercise the supplied GLBs through the same runtime used by the chapter.
 describe('Mouth clean runtime', () => {
@@ -7,7 +7,7 @@ describe('Mouth clean runtime', () => {
 
   afterEach(() => runtime?.dispose());
 
-  it('loads both models and renders movement and combat', async () => {
+  it('loads all three models and renders movement and turn-based combat', async () => {
     const errors = spyOn(console, 'error').and.callThrough();
     runtime = createMouthClean({ heroScale: 0.52, quality: 'medium' });
     const deadline = performance.now() + 15000;
@@ -16,12 +16,21 @@ describe('Mouth clean runtime', () => {
     }
     expect(runtime.status().loading).withContext(runtime.status().message).toBeFalse();
     expect(runtime.status().total).toBeGreaterThan(0);
+    expect(runtime.status().enemyReady).toBeTrue();
+    expect(runtime.status().enemyAlive).toBeTrue();
+    expect(runtime.status().enemyHp).toBe(100);
+    expect(runtime.status().heroHp).toBe(100);
     runtime.render(640, 360);
     runtime.key('right', true);
     for (let frame = 0; frame < 10; frame++) runtime.update(16);
     runtime.key('right', false);
     runtime.key('enter', true);
-    for (let frame = 0; frame < 40; frame++) runtime.update(16);
+    for (let frame = 0; frame < 80; frame++) runtime.update(16);
+    expect(runtime.status().attackUsed).toBeTrue();
+    runtime.key('enter', true);
+    expect(runtime.status().turn).toBe('enemy');
+    for (let frame = 0; frame < 1800 && runtime.status().turn === 'enemy'; frame++) runtime.update(50);
+    expect(runtime.status().turn).toBe('hero');
     runtime.suspend();
     runtime.render(640, 360);
     expect(runtime.canvas.width).toBe(640);
@@ -51,6 +60,25 @@ describe('Mouth clean runtime', () => {
       if (pixels[index] > 50) brightPixels++;
     }
     expect(brightPixels).toBeGreaterThan(100);
+    const hpBeforePunch = runtime.status().heroHp;
+    runtime.key('test-punch', true);
+    expect(runtime.status().turn).toBe('enemy');
+    for (let frame = 0; frame < 1800 && runtime.status().turn === 'enemy'; frame++) {
+      runtime.update(50);
+    }
+    expect(runtime.status().turn).toBe('hero');
+    expect(runtime.status().heroHp).toBeLessThan(hpBeforePunch);
+    expect(runtime.status().attackUsed).toBeFalse();
+    const hpBeforeSquirt = runtime.status().heroHp;
+    runtime.key('test-squirt', true);
+    expect(runtime.status().turn).toBe('enemy');
+    for (let frame = 0; frame < 1800 && runtime.status().turn === 'enemy'; frame++) {
+      runtime.update(50);
+      if (frame % 10 === 0) runtime.render(320, 180);
+    }
+    expect(runtime.status().turn).toBe('hero');
+    expect(runtime.status().heroHp).toBeLessThan(hpBeforeSquirt);
+    runtime.render(640, 360);
     runtime.setQuality('auto');
     expect(runtime.status().qualityMode).toBe('auto');
     expect(errors).not.toHaveBeenCalled();

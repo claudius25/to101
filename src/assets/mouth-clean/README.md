@@ -5,10 +5,11 @@ Everything needed to put the Tooth Explorer hero and the Mouth level into your o
 ```
 ToothExplorer_GameKit/
 ├── assets/
-│   ├── ToothExplorer.glb        ← the hero: rigged + 5 animations (4.6 MB)
+│   ├── ToothExplorer.glb        ← the hero: rigged + 7 animations (4.7 MB)
+│   ├── SodaEnemy.glb            ← the soda-bottle enemy: rigged + 5 animations (2.9 MB)
 │   └── MouthScene.glb           ← the mouth level: teeth, gums, tongue, throat, saliva, plaque (4.6 MB)
 ├── blender/
-│   └── ToothExplorer_rigged.blend   ← source file (2 scenes: "Scene" = hero, "MouthScene" = level)
+│   └── ToothExplorer_rigged.blend   ← source file (3 scenes: "Scene" = hero, "MouthScene" = level, "SodaEnemy" = enemy)
 ├── web/                         ← the playable level, loading the .glb files above (use this to integrate)
 │   ├── index.html               ← HUD, buttons, styles
 │   └── game.js                  ← all game logic (three.js r170)
@@ -64,6 +65,8 @@ root
 | `Poke` | 1.04 s | **once** | lunge + thrust. Hit frame ≈ **0.38 s** |
 | `OverheadStrike` | 1.38 s | **once** | raise → smash. Hit frame ≈ **0.70 s** |
 | `MarchAndWave` | 2.04 s | loop / once | marching in place + waving |
+| `HurtPunch` | 1.04 s | **once** | punched in the stomach: doubles over, clutches belly, pushed back |
+| `HurtSquirt` | 1.29 s | **once** | soda in the face: fists up, head turned away, shakes it off |
 
 All clips start and end in compatible poses, so cross-fades of 0.1–0.25 s look clean.
 For one-shot attacks use `LoopOnce` + `clampWhenFinished`, then fade back to `FightStance` or `Walk`.
@@ -74,6 +77,46 @@ To make it render as a black line:
 - render it **front faces only** (`side = FrontSide`) with a flat unlit black colour;
 - every other hero material should also be `FrontSide`.
 If your engine has its own outline post-effect, you can simply hide/delete the `Outline` primitives.
+
+---
+
+## 2b. The enemy – `assets/SodaEnemy.glb`
+
+An angry soda bottle (no branding): clear plastic shell showing brown soda + bubbles, red label with white wavy bands, red cap, little brown legs, red sneakers and red boxing gloves.
+
+| Property | Value |
+|---|---|
+| Height | ~2.9 units (sole → cap top), origin at the **feet**; the level scales it ×0.33 (hero is ×0.31) |
+| Facing | **+Z** (same as the hero) |
+| Rig | 16 joints – same names as the hero plus `neck` (spine → cap). Gloves/shoes are parented to `hand.*`/`foot.*` |
+| Materials | `S_Plastic` (alpha 0.32, blend), `S_Soda`, `S_Label`, `S_Stripe`, `S_Cap`, `S_Shoe`, `S_Sole`, `S_Limb`, … plus `Outline` |
+
+| Clip | Length | Loop? | Notes |
+|---|---|---|---|
+| `S_Idle` | 1.38 s | loop | boxing-guard bounce |
+| `S_Walk` | 1.04 s | loop | waddle in place |
+| `S_Squirt` | 1.54 s | **once** | leans back, then tips forward and sprays from the cap ≈ **0.62 – 1.22 s** |
+| `S_Punch` | 1.12 s | **once** | wind-up, low right jab to the stomach. Hit frame ≈ **0.52 s** |
+| `S_Hit` | 0.96 s | **once** | recoil + squash when hit |
+
+**Turn-based combat** (`game.js`, section *turns*):
+- One turn each, **max 1 minute** (`TURN_TIME = 60`), shown in the banner at the top with a countdown (blinks red in the last 10 s).
+- **Your turn:** walk freely, **one attack** (Poke *or* Smash – on a germ or on the enemy), then you can still walk to retreat. End it with **⏭ End turn** / `Enter`, or it ends when the timer runs out. Clicking the enemy walks up to it and pokes.
+- **Enemy turn:** you can't move or attack. The bottle thinks (~1 s), picks an attack (`enemyPlan()`: punch if it's within ~2 cells, otherwise 60 % squirt / 40 % punch), walks into range, attacks once, retreats to 5 cells away, then hands the turn back – usually well under the minute.
+  - It walks to the best reachable cell on the right ring around the hero (`pickSpot()`), and attacks as soon as it's in range (`inRange()`), so it never needs an exact cell.
+  - If it stops making progress (ledge, tooth, edge of the tongue – `noProgress()`), it adapts: punch → squirt from wherever it can (2–4.5 cells, any height); if even that's impossible it says so and ends its turn.
+- State lives in `TURN = { who, left, attackUsed, phase, plan }`; enemy phases are `think → approach → attacking → retreat → done`. `startTurn(who)` / `endTurn()` switch turns.
+- If the enemy is defeated, your turns continue until it respawns (5 s). If the hero is defeated, both reset and it's your turn.
+
+**Enemy attacks:**
+- Ranges are in grid cells (`CELL` = 0.5): **squirt from 3 cells** (`SQUIRT_CELLS`), **punch at 1 cell** (`PUNCH_CELLS`).
+- The soda stream is a ballistic stream of small brown droplets fired from the `neck` bone tip toward the hero's chest – jump to dodge it. The first droplet that hits plays `HurtSquirt` (−10 HP).
+- The punch is checked at the hit frame; in range it plays `HurtPunch` (−14 HP) with knock-back.
+- The hero's Poke (−20) and Overhead smash (−34) hurt the enemy (`S_Hit` + knock-back). At 0 HP it fizzes away and respawns 5 s later.
+- **Close-up camera:** every hit cuts to a close-up of whoever got hurt, seen from the attacker's side, with ~0.35× slow motion for about a second (`closeUp()` / `applyCloseUp()`, `CU.dur`). Combat timers run on game time (`later()`), so slow motion slows everything together.
+- **Test buttons:** *🥤 Test squirt* (key `1`) and *👊 Test punch* (key `2`) end your turn and force the enemy to use that attack on its turn.
+- The enemy gets its own x-ray outline colour (red) when hidden behind teeth.
+- Debug hook: `window.__g` exposes the state and `testEnemyAttack`, `hurtHero`, `hurtEnemy`, `closeUp`, … for quick testing from the console.
 
 ---
 
@@ -128,6 +171,7 @@ const STEP = 0.24;                     // max bump he walks up without jumping
 * **Cut-away:** a clipping plane at `x = heroX + 0.65` removes everything between the camera and the hero (gums, lips, cheek, tongue is **not** cut). The near side teeth are drawn again as a 32 % transparent "ghost" copy (`M_Enamel`, `M_Plaque` only). The **front teeth** (incisors, laterals, canines: `Tooth_*_[RL][1-3]_*`) are never cut or ghosted – they stay solid.
 * **X-ray outline:** when a solid object hides the hero, a purple (`#b05cff`) outline of him is drawn on top. Two extra passes per hero mesh, drawn after the mouth but before the hero (`renderOrder` 20 → 21 → 30): (1) a stencil mask of his hidden parts (`depthFunc: GreaterDepth`, no colour), (2) a copy inflated along the normals by 0.14 hero units, drawn only where hidden and outside the mask. Both are nudged 0.12 units toward the camera so tiny overlaps (boots in the bumpy tongue) don't trigger it. Needs `new WebGLRenderer({ stencil: true })`.
 * **Attacks:** at the hit frame, check germs within reach in the facing direction (Poke: 0.6 ahead, radius 0.5; Overhead: 0.45 ahead, radius 0.62).
+* **Grid & snapping:** the tongue shows a grid of `CELL = 0.5` units (world-aligned, drawn in the tongue shader with `fwidth` anti-aliasing; `G` toggles it). Whenever the hero stops – keys released, click target reached, attack finished – he eases into the centre of his cell (`cellCenter(v) = (floor(v / CELL) + 0.5) * CELL`), but only if that centre is walkable. Click-to-move targets the centre of the clicked cell; the hero's cell is softly highlighted and the target cell tinted yellow (shader uniforms `uHeroCell`, `uTargetCell`). Start position: a cell centre at (2.25, 3.25).
 * **Click / tap to move:** short click (< 6 px, < 450 ms) → raycast from the camera into the ground meshes (or onto a germ). The hero walks there; a pointer pops when he arrives. Drag = pan the camera.
 * **Saliva:** for each `Saliva_Drip_*` the top point becomes the anchor of a strand + teardrop bead that oozes for 9–14 s (max ~78 % of the gap to the floor), drops, snaps back, rests 6–14 s.
 
