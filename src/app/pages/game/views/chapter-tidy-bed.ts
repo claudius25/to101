@@ -61,6 +61,9 @@ export class ChapterTidyBed implements ScreenView {
   private readonly instruction: QuickInstruction;
   private started = false;
   private finished = false;
+  get completed(): boolean {
+    return this.finished;
+  }
   private spawnIn = 0;
   private hitMs = 0;
 

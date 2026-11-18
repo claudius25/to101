@@ -6,9 +6,13 @@ import { ChapterTwo } from './chapter-two';
 import { ChapterTidyBed } from './chapter-tidy-bed';
 import { SettingsView } from './settings';
 import { HitRegistry, ScreenView, ViewFrame, ViewId, ViewNav } from './view';
+import { ActivitiesView } from './activities';
+import { ActivityProgress } from '../activities/activity-progress';
+import { ACTIVITIES_CONFIG } from '../activities/activities.config';
+import { ageRange } from '../activities/age-range';
 
 /** Register every view here. Instances are created once and reused, so they keep state. */
-const FACTORIES: Record<ViewId, () => ScreenView> = {
+const FACTORIES: Record<Exclude<ViewId, 'activities'>, () => ScreenView> = {
   'chapter-mouth-clean': () => new ChapterMouthClean(),
   'chapter-1': () => new ChapterOne(),
   'chapter-2': () => new ChapterTwo(),
@@ -45,8 +49,9 @@ export class ScreenRouter implements ViewNav {
   private live = true;
   private curfewed = false;
   private paused = false;
+  private readonly progress = new ActivityProgress();
 
-  constructor(initial: ViewId = 'chapter-mouth-clean') {
+  constructor(initial: ViewId = 'activities') {
     this.open(initial);
   }
 
@@ -99,6 +104,7 @@ export class ScreenRouter implements ViewNav {
 
   back(): void {
     if (this.stack.length <= 1) {
+      if (this.current !== 'activities') this.go('activities');
       return;
     }
     this.stack.pop()?.exit?.();
@@ -127,6 +133,11 @@ export class ScreenRouter implements ViewNav {
       return;
     }
     this.top.update?.(deltaMs, this);
+    if (this.top.completed) {
+      const range = ageRange(ACTIVITIES_CONFIG.ageMonths);
+      const activity = range?.activities.find((item) => item.view === this.current);
+      if (range && activity) this.progress.complete(range.id, activity.id);
+    }
   }
 
   /** Re-emits the current stack, so callbacks wired after construction catch up. */
@@ -238,7 +249,7 @@ export class ScreenRouter implements ViewNav {
   private open(id: ViewId): void {
     let view = this.views.get(id);
     if (!view) {
-      view = FACTORIES[id]();
+      view = id === 'activities' ? new ActivitiesView(this.progress) : FACTORIES[id]();
       this.views.set(id, view);
     }
 
@@ -253,6 +264,8 @@ export class ScreenRouter implements ViewNav {
   }
 
   private changed(): void {
+    this.pressed = null;
+    this.hits.reset();
     this.invalidate();
     this.onChange?.(this.path);
     // Topmost briefing wins, so a sheet without one leaves the chapter's message up.

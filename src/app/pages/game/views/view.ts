@@ -15,7 +15,7 @@ import { EinkCard } from '../e-ink/eink-display';
  * Adding a screen: add its id to `ViewId`, write the class, register it in
  * `views/router.ts`.
  */
-export type ViewId = 'chapter-mouth-clean' | 'chapter-1' | 'chapter-2' | 'chapter-tidy-bed' | 'settings';
+export type ViewId = 'activities' | 'chapter-mouth-clean' | 'chapter-1' | 'chapter-2' | 'chapter-tidy-bed' | 'settings';
 
 /** One finger, in canvas pixels. Views that want multi-touch track these by `id`. */
 export interface ViewPointer {
@@ -89,6 +89,8 @@ export interface ViewNav {
 
 export interface ScreenView {
   readonly id: ViewId;
+  /** True once the current round's objective has been completed. */
+  readonly completed?: boolean;
   /**
    * Shown on the e-ink strip while this view is the topmost one that has a briefing,
    * unless a curfew window is in force. A pushed view without one leaves it alone.

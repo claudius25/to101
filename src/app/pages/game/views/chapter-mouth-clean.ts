@@ -31,6 +31,11 @@ export class ChapterMouthClean implements ScreenView {
   readonly quality: MouthCleanQuality = 'auto';
 
   private runtime: MouthCleanRuntime | null = null;
+  private roundCompleted = false;
+
+  get completed(): boolean {
+    return this.roundCompleted;
+  }
   private error = '';
   private readonly instruction = new QuickInstruction(
     'Move with the arrows. Enter pokes, then ends your turn. Drag to pan. Pinch to zoom.',
@@ -38,6 +43,7 @@ export class ChapterMouthClean implements ScreenView {
   private readonly touches = new Map<number, { x: number; y: number }>();
 
   enter(): void {
+    this.roundCompleted = false;
     this.instruction.reset();
     const quote = INTRO_QUOTES[Math.floor(Math.random() * INTRO_QUOTES.length)];
     this.briefing.text = `**${quote}**`;
@@ -51,6 +57,10 @@ export class ChapterMouthClean implements ScreenView {
 
   update(deltaMs: number): void {
     this.runtime?.update(deltaMs);
+    const status = this.runtime?.status();
+    if (status && !status.loading && !status.error && status.total > 0 && status.cleaned >= status.total) {
+      this.roundCompleted = true;
+    }
   }
 
   paint(frame: ViewFrame): void {
