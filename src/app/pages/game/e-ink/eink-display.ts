@@ -70,24 +70,6 @@ function trimAlpha(image: HTMLImageElement): Rect {
   return { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
 }
 
-function roundedRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number,
-): void {
-  const r = Math.max(0, Math.min(radius, width / 2, height / 2));
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + width, y, x + width, y + height, r);
-  ctx.arcTo(x + width, y + height, x, y + height, r);
-  ctx.arcTo(x, y + height, x, y, r);
-  ctx.arcTo(x, y, x + width, y, r);
-  ctx.closePath();
-}
-
 function seconds(elapsedMs: number): string {
   return `${(elapsedMs / 1000).toFixed(1)}s`;
 }
@@ -128,18 +110,11 @@ export class EinkDisplay {
 
   private paintPaper(frame: ScreenPaintContext): void {
     const { ctx, width, height } = frame;
-    const unit = height / 100;
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = PAPER;
-    roundedRect(ctx, 0, 0, width, height, unit * 8);
-    ctx.fill();
-
-    ctx.strokeStyle = 'rgba(21, 21, 15, 0.55)';
-    ctx.lineWidth = unit * 1.6;
-    roundedRect(ctx, unit * 3, unit * 3, width - unit * 6, height - unit * 6, unit * 6);
-    ctx.stroke();
+    ctx.fillRect(0, 0, width, height);
   }
 
   private paintCard(frame: ScreenPaintContext, card: EinkCard): void {

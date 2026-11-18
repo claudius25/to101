@@ -47,7 +47,7 @@ export const CURFEW_CONFIG: CurfewConfig = {
   enabled: true,
   character: 'assets/e-ink/officer.png',
   layout: {
-    padding: 7,
+    padding: 4,
     gap: 10,
     characterWidth: 0.24,
     lineHeight: 1.26,
