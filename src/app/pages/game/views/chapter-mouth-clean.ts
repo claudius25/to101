@@ -1,13 +1,27 @@
 ﻿import { createMouthClean, MouthCleanQuality, MouthCleanRuntime } from './mouth-clean-runtime';
 import { ScreenView, ViewFrame, ViewPointer } from './view';
 import { font } from './ui';
+import { QuickInstruction } from './components/quick-instruction';
+
+const INTRO_QUOTES = [
+  'You only have to brush the teeth you want to keep.',
+  "Plaque is back. And this time, it's personal.",
+  'Your mouth is a battlefield. Your toothbrush is the weapon.',
+  "Be true to your teeth, or they'll be false to you.",
+  'Sugar is sweet. Cavities are not.',
+  'A toothbrush a day keeps the dentist away. Almost.',
+  'Floss like a boss!',
+  'The plaque stops here!',
+  'Not all heroes wear capes. Some wear toothpaste.',
+  'Welcome to the mouth. Population: 700 species of bacteria. Good luck.',
+] as const;
 
 /** Renders the supplied Three.js world into the device's glass surface. */
 export class ChapterMouthClean implements ScreenView {
   readonly id = 'chapter-mouth-clean' as const;
   readonly animated = true;
   readonly briefing = {
-    text: '**Mouth clean**\nMove with the arrows. Enter pokes, then ends your turn. Drag to pan. Pinch to zoom.',
+    text: '**Mouth clean**',
     fontSize: 15,
     character: 'assets/e-ink/doc.png',
   };
@@ -18,9 +32,15 @@ export class ChapterMouthClean implements ScreenView {
 
   private runtime: MouthCleanRuntime | null = null;
   private error = '';
+  private readonly instruction = new QuickInstruction(
+    'Move with the arrows. Enter pokes, then ends your turn. Drag to pan. Pinch to zoom.',
+  );
   private readonly touches = new Map<number, { x: number; y: number }>();
 
   enter(): void {
+    this.instruction.reset();
+    const quote = INTRO_QUOTES[Math.floor(Math.random() * INTRO_QUOTES.length)];
+    this.briefing.text = `**${quote}**`;
     if (this.runtime || this.error) return;
     try {
       this.runtime = createMouthClean({ heroScale: this.heroScale, quality: this.quality });
@@ -55,27 +75,39 @@ export class ChapterMouthClean implements ScreenView {
       ctx.font = font(frame, 3.5, 600);
       ctx.fillText(
         `HP ${status.heroHp}  |  Soda ${status.enemyHp}  |  ${status.turn === 'hero' ? 'Your turn' : 'Soda turn'} ${status.turnSeconds}s`,
-        unit * 3, unit * 9,
+        unit * 3,
+        unit * 9,
       );
       ctx.fillText(
         status.turn === 'hero'
-          ? status.attackUsed ? 'Enter ends turn' : 'Enter pokes'
+          ? status.attackUsed
+            ? 'Enter ends turn'
+            : 'Enter pokes'
           : `Soda ${status.enemyPhase ?? 'thinking'}`,
-        unit * 3, unit * 14,
+        unit * 3,
+        unit * 14,
       );
     }
     if (this.error || status?.error || status?.loading) {
-      ctx.fillText(this.error || status?.error || status?.message || '', unit * 3, unit * 38, width - unit * 6);
+      ctx.fillText(
+        this.error || status?.error || status?.message || '',
+        unit * 3,
+        unit * 38,
+        width - unit * 6,
+      );
     }
     if (status?.flash) ctx.fillText(status.flash, unit * 3, unit * 69, width - unit * 6);
+    this.instruction.paint(frame);
   }
 
   pointer(event: ViewPointer): boolean {
+    if (this.instruction.pointer(event)) return true;
     if (event.phase === 'up' || event.phase === 'cancel') {
       this.touches.delete(event.id);
       return true;
     }
     if (event.phase === 'down') {
+      this.instruction.dismiss();
       this.touches.set(event.id, { x: event.x, y: event.y });
       return true;
     }
@@ -102,6 +134,7 @@ export class ChapterMouthClean implements ScreenView {
 
   key(key: string): boolean {
     if (!['left', 'right', 'up', 'down', 'enter'].includes(key)) return false;
+    this.instruction.dismiss();
     this.runtime?.key(key, true);
     return true;
   }
