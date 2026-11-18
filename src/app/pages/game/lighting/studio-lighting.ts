@@ -1,37 +1,57 @@
 import {
   ACESFilmicToneMapping,
+  AgXToneMapping,
+  BackSide,
   Box3,
   BufferAttribute,
+  CircleGeometry,
   Color,
+  DataTexture,
   DirectionalLight,
+  DoubleSide,
   Group,
   Light,
+  LinearFilter,
+  LinearMipmapLinearFilter,
   Material,
   Matrix4,
   Mesh,
+  MeshBasicMaterial,
+  MeshPhysicalMaterial,
   MeshStandardMaterial,
+  NeutralToneMapping,
   Object3D,
   PCFSoftShadowMap,
+  PlaneGeometry,
   PMREMGenerator,
-  RectAreaLight,
+  Quaternion,
+  RepeatWrapping,
   Scene,
   Sphere,
+  SphereGeometry,
+  SRGBColorSpace,
+  CanvasTexture,
   Texture,
+  ToneMapping,
+  Vector2,
   Vector3,
   WebGLRenderer,
+  WebGLRenderTarget,
 } from 'three';
-import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 
 import {
+  MaterialRecipe,
   STUDIO_PRESET,
-  StripLight,
+  StudioEnvironment,
   StudioPreset,
   Vec3,
 } from './studio.config';
 
-/** RectAreaLight needs its lookup tables uploaded once per page, before first use. */
-let uniformsReady = false;
+const TONE_MAPPING: Record<StudioPreset['toneMapping'], ToneMapping> = {
+  neutral: NeutralToneMapping,
+  aces: ACESFilmicToneMapping,
+  agx: AgXToneMapping,
+};
 
 function toVector(value: Vec3): Vector3 {
   return new Vector3(value[0], value[1], value[2]);
@@ -96,92 +116,173 @@ function findPart(root: Object3D, prefix: string): Object3D | null {
   return found;
 }
 
+/** Fine bead-blast grain: a tiling normal map and a matching roughness map, made once. */
+function makeGrain(): { normal: DataTexture; roughness: DataTexture } {
+  const size = 256;
+  const height = new Float32Array(size * size);
+  for (let index = 0; index < height.length; index++) {
+    height[index] = Math.random();
+  }
+
+  const at = (x: number, y: number): number =>
+    height[((y + size) % size) * size + ((x + size) % size)];
+  const smooth = new Float32Array(size * size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let sum = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          sum += at(x + dx, y + dy);
+        }
+      }
+      smooth[y * size + x] = sum / 9;
+    }
+  }
+
+  const normal = new Uint8Array(size * size * 4);
+  const roughness = new Uint8Array(size * size * 4);
+  const s = (x: number, y: number): number =>
+    smooth[((y + size) % size) * size + ((x + size) % size)];
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const index = y * size + x;
+      let nx = -(s(x + 1, y) - s(x - 1, y)) * 2.2;
+      let ny = -(s(x, y + 1) - s(x, y - 1)) * 2.2;
+      let nz = 1;
+      const length = Math.hypot(nx, ny, nz);
+      nx /= length;
+      ny /= length;
+      nz /= length;
+      normal.set(
+        [(nx * 0.5 + 0.5) * 255, (ny * 0.5 + 0.5) * 255, (nz * 0.5 + 0.5) * 255, 255],
+        index * 4,
+      );
+      const r = 200 + (smooth[index] - 0.5) * 120; // roughnessMap reads G
+      roughness.set([r, r, r, 255], index * 4);
+    }
+  }
+
+  const texture = (data: Uint8Array): DataTexture => {
+    const map = new DataTexture(data, size, size);
+    map.wrapS = map.wrapT = RepeatWrapping;
+    map.generateMipmaps = true;
+    map.minFilter = LinearMipmapLinearFilter;
+    map.magFilter = LinearFilter;
+    map.repeat.set(5, 5);
+    map.needsUpdate = true;
+    return map;
+  };
+
+  return { normal: texture(normal), roughness: texture(roughness) };
+}
+
 /**
- * The device's studio rig: five RectAreaLight strips placed by hand, one more aimed at
- * named parts, a glowing "ROLL THE DICE" label, and a three-point directional set.
+ * Concentric machining rings, drawn by the shader on the flat caps of round parts.
+ * The pattern is scaled per mesh (`uScale`, `uAxis`), set in `onBeforeRender`, because
+ * the glTF meshes are a few millimetres across in their own space.
+ */
+function machine(material: MeshStandardMaterial, rings: number): void {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms['uRings'] = { value: rings };
+    shader.uniforms['uScale'] = { value: 1 };
+    shader.uniforms['uAxis'] = { value: new Vector3(0, 1, 0) };
+    material.userData['shader'] = shader;
+
+    shader.vertexShader =
+      'varying vec3 vLocalPosition;\nvarying vec3 vLocalNormal;\n' +
+      shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\n  vLocalPosition = position;\n  vLocalNormal = normal;',
+      );
+
+    shader.fragmentShader =
+      'varying vec3 vLocalPosition;\nvarying vec3 vLocalNormal;\nuniform float uRings;\nuniform float uScale;\nuniform vec3 uAxis;\n' +
+      shader.fragmentShader
+        .replace(
+          '#include <color_fragment>',
+          '#include <color_fragment>\n  float machinedRing = 0.0;',
+        )
+        .replace(
+          '#include <roughnessmap_fragment>',
+          `#include <roughnessmap_fragment>
+          {
+            // only faces that look along the part's axis: the flat cap, not the barrel
+            float cap = smoothstep( 0.9, 0.98, abs( dot( normalize( vLocalNormal ), uAxis ) ) );
+            float r = length( vLocalPosition - uAxis * dot( vLocalPosition, uAxis ) ) * uScale;
+            float ring = sin( r * uRings * 6.2832 ) * 0.5 + 0.5;
+            float fine = sin( r * uRings * 2.7 * 6.2832 ) * 0.5 + 0.5;
+            roughnessFactor = clamp( roughnessFactor + cap * ( ( ring - 0.5 ) * 0.22 + ( fine - 0.5 ) * 0.1 - 0.06 ), 0.04, 1.0 );
+            machinedRing = cap * ( ring * 0.7 + fine * 0.3 );
+          }`,
+        )
+        .replace(
+          '#include <lights_fragment_begin>',
+          'diffuseColor.rgb *= 1.0 - 0.16 * machinedRing;\n#include <lights_fragment_begin>',
+        );
+  };
+  material.customProgramCacheKey = () => `machined-${rings}`;
+}
+
+/**
+ * The device's studio: one baked environment of softboxes for all the light, re-dressed
+ * materials, a glowing "ROLL THE DICE" label, and optional punctual lights.
  *
- * It owns everything about the look — tone mapping, the environment map and its
- * intensity, shadows — so nothing from an older rig can stack on top of these
- * intensities. Build it once the model has loaded:
+ * It owns everything about the look — tone mapping, the environment and its intensity,
+ * shadows — so nothing from an older rig can stack on top. Build it once the model has
+ * loaded, and keep it turning with the device:
  *
  *     lighting.prepare(renderer, scene);          // before the first frame
  *     lighting.attach(model, pivot);              // after the GLB is in the pivot
- *
- * The rig is added to the same frame as the model, so it stays rigid in device space.
+ *     lighting.update();                          // every frame, before render
  */
 export class StudioLighting {
   readonly group = new Group();
 
-  private environment: Texture | null = null;
-  private ownsEnvironment = false;
-  /** Cloned materials, kept so they can be disposed with the rig. */
-  private readonly clones: Material[] = [];
+  private renderer: WebGLRenderer | null = null;
   private scene: Scene | null = null;
+  private frame: Object3D | null = null;
+  private environment: WebGLRenderTarget | null = null;
+  private grain: { normal: DataTexture; roughness: DataTexture } | null = null;
+  /** Materials and textures the rig made, kept so they can be disposed with it. */
+  private readonly owned: (Material | Texture)[] = [];
+
+  private readonly worldQuaternion = new Quaternion();
 
   constructor(private readonly preset: StudioPreset = STUDIO_PRESET) {
     this.group.name = 'Studio rig';
   }
 
-  /** Renderer and scene settings. Safe to call once, before the first frame. */
+  /** Renderer and scene settings, and the baked studio. Call once, before the first frame. */
   prepare(renderer: WebGLRenderer, scene: Scene): void {
-    if (!uniformsReady) {
-      RectAreaLightUniformsLib.init();
-      uniformsReady = true;
-    }
-
+    this.renderer = renderer;
     this.scene = scene;
 
-    renderer.toneMapping = ACESFilmicToneMapping;
+    renderer.toneMapping = TONE_MAPPING[this.preset.toneMapping];
     renderer.toneMappingExposure = this.preset.toneMappingExposure;
-
+    renderer.shadowMap.enabled = this.preset.shadows.enabled;
     if (this.preset.shadows.enabled) {
-      renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = PCFSoftShadowMap;
     }
 
-    // Brushed aluminium only reads correctly with an environment to reflect.
-    if (!scene.environment) {
-      const pmrem = new PMREMGenerator(renderer);
-      this.environment = pmrem.fromScene(new RoomEnvironment(), this.preset.environmentBlur).texture;
-      this.ownsEnvironment = true;
-      scene.environment = this.environment;
-      pmrem.dispose();
-    }
-
+    this.environment?.dispose();
+    this.environment = this.bakeStudio(renderer, this.preset.environment);
+    scene.environment = this.environment.texture;
     scene.environmentIntensity = this.preset.environmentIntensity;
   }
 
   /**
-   * Builds the rig around `model` and parents it to `frame`, the object the model sits
-   * in. Returns the names of any parts the preset asked for and could not find.
+   * Re-dresses the model's materials and parents the rig to `frame`, the object the model
+   * sits in. Returns the names of any parts the preset asked for and could not find.
    */
   attach(model: Object3D, frame: Object3D): string[] {
     const missing: string[] = [];
-    const bounds = boundsIn(model, frame);
-    const size = bounds.getSize(new Vector3());
-    const radius = bounds.getBoundingSphere(new Sphere()).radius || 1;
-    // Everything in the preset is quoted against a device this long on Z.
-    const scale = size.z > 0 ? size.z / this.preset.referenceLength : 1;
-
-    for (const spec of this.preset.strips) {
-      const position = toVector(spec.position).multiplyScalar(scale);
-      const target = toVector(spec.target).multiplyScalar(scale);
-      this.group.add(this.strip(spec, position, target, scale));
+    this.frame = frame;
+    if (!this.grain) {
+      this.grain = makeGrain();
+      this.owned.push(this.grain.normal, this.grain.roughness);
     }
 
-    for (const spec of this.preset.partStrips) {
-      const part = findPart(model, spec.part);
-      if (!part) {
-        missing.push(spec.part);
-        console.warn(`Studio lighting: no part named "${spec.part}"; its strip is skipped.`);
-        continue;
-      }
-
-      // The part's own bounds are already in device units, only the offset scales.
-      const target = boundsIn(part, frame).getCenter(new Vector3());
-      const position = target.clone().addScaledVector(toVector(spec.offset), scale);
-      this.group.add(this.strip(spec, position, target, scale));
-    }
+    this.dress(model);
 
     for (const accent of this.preset.accents) {
       const part = findPart(model, accent.part);
@@ -193,37 +294,55 @@ export class StudioLighting {
       this.glow(part, accent.color, accent.intensity);
     }
 
-    for (const spec of this.preset.directionals) {
-      const light = new DirectionalLight(new Color(spec.color), spec.intensity);
-      light.position.copy(toVector(spec.position).multiplyScalar(scale));
-      light.target.position.set(0, 0, 0);
+    if (this.preset.directionals.length > 0) {
+      const bounds = boundsIn(model, frame);
+      const size = bounds.getSize(new Vector3());
+      const radius = bounds.getBoundingSphere(new Sphere()).radius || 1;
+      const scale = size.z > 0 ? size.z / this.preset.referenceLength : 1;
 
-      if (spec.castShadow && this.preset.shadows.enabled) {
-        this.castShadows(light, radius);
+      for (const spec of this.preset.directionals) {
+        const light = new DirectionalLight(new Color(spec.color), spec.intensity);
+        light.position.copy(toVector(spec.position).multiplyScalar(scale));
+        light.target.position.set(0, 0, 0);
+        if (spec.castShadow && this.preset.shadows.enabled) {
+          this.castShadows(light, radius);
+        }
+        this.group.add(light, light.target);
       }
 
-      this.group.add(light, light.target);
-    }
-
-    if (this.preset.floorBounce > 0) {
-      const bounce = new RectAreaLight(0xffffff, this.preset.floorBounce, size.x * 2, size.z * 2);
-      bounce.position.set(0, bounds.min.y - size.y, 0);
-      bounce.lookAt(0, 0, 0);
-      this.group.add(bounce);
-    }
-
-    if (this.preset.shadows.enabled) {
-      model.traverse((node) => {
-        const mesh = node as Mesh;
-        if (mesh.isMesh) {
-          mesh.castShadow = true;
-          mesh.receiveShadow = true;
-        }
-      });
+      if (this.preset.shadows.enabled) {
+        model.traverse((node) => {
+          const mesh = node as Mesh;
+          if (mesh.isMesh) {
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+          }
+        });
+      }
     }
 
     frame.add(this.group);
+    this.update();
     return missing;
+  }
+
+  /**
+   * Turns the studio with the device's frame, so the highlights stay on the keypad and the
+   * rollers however the device is posed. Cheap: one matrix decomposition per frame.
+   */
+  update(): void {
+    const scene = this.scene;
+    const frame = this.frame;
+    if (!scene || !frame || !this.preset.followDevice) {
+      return;
+    }
+
+    frame.updateWorldMatrix(true, false);
+    frame.getWorldQuaternion(this.worldQuaternion);
+    // From three r17x on, the environment is sampled with the exact inverse of
+    // `environmentRotation` (the transpose of its matrix), so turning the studio with the device
+    // is just the frame's own world rotation — exact for any combination of pitch, yaw and roll.
+    scene.environmentRotation.setFromQuaternion(this.worldQuaternion);
   }
 
   dispose(): void {
@@ -233,47 +352,197 @@ export class StudioLighting {
     this.group.removeFromParent();
     this.group.clear();
 
-    for (const material of this.clones) {
-      material.dispose();
+    for (const item of this.owned) {
+      item.dispose();
     }
-    this.clones.length = 0;
+    this.owned.length = 0;
+    this.grain = null;
 
-    if (this.ownsEnvironment) {
-      this.environment?.dispose();
-      if (this.scene?.environment === this.environment) {
-        this.scene.environment = null;
+    if (this.scene && this.environment && this.scene.environment === this.environment.texture) {
+      this.scene.environment = null;
+      this.scene.environmentRotation.set(0, 0, 0);
+    }
+    this.environment?.dispose();
+    this.environment = null;
+    this.frame = null;
+    this.scene = null;
+    this.renderer = null;
+  }
+
+  /** Renders the softboxes once into a pre-filtered environment map. */
+  private bakeStudio(renderer: WebGLRenderer, spec: StudioEnvironment): WebGLRenderTarget {
+    const studio = new Scene();
+    const room = new Mesh(
+      new SphereGeometry(20, 32, 16),
+      new MeshBasicMaterial({
+        side: BackSide,
+        color: new Color(spec.room.color).multiplyScalar(spec.room.intensity),
+      }),
+    );
+    studio.add(room);
+
+    let gradient: CanvasTexture | null = null;
+    for (const box of spec.softboxes) {
+      const material = new MeshBasicMaterial({
+        color: new Color(box.color).multiplyScalar(box.intensity),
+        side: DoubleSide,
+      });
+      if (box.gradient) {
+        gradient ??= this.verticalGradient();
+        material.map = gradient;
+      }
+      const geometry =
+        box.shape === 'disc'
+          ? new CircleGeometry(box.width / 2, 48)
+          : new PlaneGeometry(box.width, box.height);
+      const panel = new Mesh(geometry, material);
+      panel.position.copy(toVector(box.position));
+      panel.lookAt(0, 0, 0);
+      studio.add(panel);
+    }
+
+    if (spec.floor) {
+      const floor = new Mesh(
+        new CircleGeometry(14, 48),
+        new MeshBasicMaterial({
+          side: DoubleSide,
+          color: new Color(spec.floor.color).multiplyScalar(spec.floor.intensity),
+        }),
+      );
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.y = -spec.floor.depth;
+      studio.add(floor);
+    }
+
+    const pmrem = new PMREMGenerator(renderer);
+    const target = pmrem.fromScene(studio, spec.blur);
+    pmrem.dispose();
+
+    studio.traverse((node) => {
+      const mesh = node as Mesh;
+      if (mesh.isMesh) {
+        mesh.geometry.dispose();
+        (mesh.material as Material).dispose();
+      }
+    });
+    gradient?.dispose();
+    return target;
+  }
+
+  private verticalGradient(): CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 4;
+    canvas.height = 256;
+    const context = canvas.getContext('2d')!;
+    const fill = context.createLinearGradient(0, 0, 0, 256);
+    fill.addColorStop(0, '#fff');
+    fill.addColorStop(0.55, '#888');
+    fill.addColorStop(1, '#000');
+    context.fillStyle = fill;
+    context.fillRect(0, 0, 4, 256);
+    const texture = new CanvasTexture(canvas);
+    texture.colorSpace = SRGBColorSpace;
+    return texture;
+  }
+
+  /** Swaps every material on the model for its studio version. */
+  private dress(model: Object3D): void {
+    const made = new Map<Material, Material>();
+
+    model.traverse((node) => {
+      const mesh = node as Mesh;
+      if (!mesh.isMesh) {
+        return;
+      }
+
+      const before = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      const after = before.map((material) => {
+        let next = made.get(material);
+        if (!next) {
+          next = this.redress(material);
+          made.set(material, next);
+        }
+        return next;
+      });
+      mesh.material = Array.isArray(mesh.material) ? after : after[0];
+
+      // Machined caps: scale the rings to this mesh's own size and axis.
+      const machined = after.filter((material) => material.userData['machined']);
+      if (machined.length > 0) {
+        mesh.geometry.computeBoundingBox();
+        const extent = mesh.geometry.boundingBox!.getSize(new Vector3()).toArray();
+        // The axis is the dimension that differs most from the other two, which span the cap.
+        const odd = [0, 1, 2].map(
+          (i) =>
+            Math.abs(extent[i] - (extent[(i + 1) % 3] + extent[(i + 2) % 3]) / 2) /
+            Math.max(...extent),
+        );
+        const axisIndex = odd.indexOf(Math.max(...odd));
+        const axis = new Vector3().setComponent(axisIndex, 1);
+        const scale =
+          1 / (Math.max(extent[(axisIndex + 1) % 3], extent[(axisIndex + 2) % 3]) * 0.5);
+        mesh.onBeforeRender = () => {
+          for (const material of machined) {
+            const shader = material.userData['shader'];
+            if (shader) {
+              shader.uniforms['uScale'].value = scale;
+              shader.uniforms['uAxis'].value.copy(axis);
+            }
+          }
+        };
+      }
+    });
+
+    for (const [old] of made) {
+      old.dispose();
+    }
+  }
+
+  private redress(source: Material): Material {
+    const original = source as MeshStandardMaterial;
+    const recipe: MaterialRecipe | undefined = this.preset.materials.find((entry) =>
+      source.name.startsWith(entry.match),
+    );
+
+    const base = {
+      name: source.name,
+      side: source.side,
+      color: recipe?.color
+        ? new Color(recipe.color)
+        : (original.color?.clone() ?? new Color(0xffffff)),
+      metalness: recipe?.metalness ?? original.metalness ?? 0,
+      roughness: recipe?.roughness ?? Math.max(0.12, original.roughness ?? 0.5),
+      emissive: recipe?.emissive
+        ? new Color(recipe.emissive)
+        : (original.emissive?.clone() ?? new Color(0x000000)),
+      emissiveIntensity: recipe?.emissiveIntensity ?? original.emissiveIntensity ?? 1,
+      envMapIntensity: recipe?.envMapIntensity ?? 1,
+    };
+
+    const material =
+      recipe?.kind === 'physical'
+        ? new MeshPhysicalMaterial({
+            ...base,
+            clearcoat: recipe.clearcoat ?? 0,
+            clearcoatRoughness: recipe.clearcoatRoughness ?? 0,
+          })
+        : new MeshStandardMaterial(base);
+
+    if (recipe?.grain && this.grain) {
+      material.normalMap = this.grain.normal;
+      material.normalScale = new Vector2(recipe.grain, recipe.grain);
+      if (recipe.grainRoughness) {
+        material.roughnessMap = this.grain.roughness;
       }
     }
 
-    this.environment = null;
-    this.ownsEnvironment = false;
-    this.scene = null;
-  }
-
-  /**
-   * Strips are aimed while the rig is still detached, so `lookAt` resolves against an
-   * identity parent and the orientation it works out is the device-space one.
-   */
-  private strip(
-    spec: Pick<StripLight, 'color' | 'intensity' | 'width' | 'height' | 'rotateZ'>,
-    position: Vector3,
-    target: Vector3,
-    scale: number,
-  ): RectAreaLight {
-    const light = new RectAreaLight(
-      new Color(spec.color),
-      spec.intensity,
-      spec.width * scale,
-      spec.height * scale,
-    );
-
-    light.position.copy(position);
-    light.lookAt(target.x, target.y, target.z);
-    if (spec.rotateZ) {
-      light.rotateZ(spec.rotateZ);
+    if (recipe?.machined) {
+      machine(material, recipe.machined);
+      material.userData['machined'] = true;
     }
 
-    return light;
+    this.owned.push(material);
+    return material;
   }
 
   private castShadows(light: DirectionalLight, radius: number): void {
@@ -310,7 +579,7 @@ export class StudioLighting {
           copy.emissive = new Color(color);
           copy.emissiveIntensity = intensity;
         }
-        this.clones.push(copy);
+        this.owned.push(copy);
         return copy;
       });
 

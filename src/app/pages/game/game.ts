@@ -568,6 +568,8 @@ export class Game implements AfterViewInit, OnDestroy {
     this.keypad.update(deltaMs);
     this.activeCamera = this.updateCamera();
     this.updateScreens(deltaMs, this.activeCamera);
+    // Turn the baked studio with the device, so its highlights stay on the keypad and rollers.
+    this.lighting.update();
     renderer.render(this.scene, this.activeCamera);
   };
 
@@ -747,8 +749,8 @@ export class Game implements AfterViewInit, OnDestroy {
     }
 
     // The CSS box stays the same; only the buffer behind it shrinks, and the browser
-    // scales it back up. Fewer fragments is the cheapest frame time there is here,
-    // because the studio rig's rect-area lights are paid for per pixel.
+    // scales it back up. Fewer fragments is the cheapest frame time there is, though the
+    // studio rig is now a baked environment, so full resolution holds 60 fps as well.
     const pixelRatio = Math.min(window.devicePixelRatio, 2) * this.renderScale();
     if (
       canvas.width !== Math.floor(width * pixelRatio) ||

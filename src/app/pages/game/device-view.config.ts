@@ -36,8 +36,9 @@ export interface RenderConfig {
   /**
    * Internal resolution, as a share of the canvas's CSS size (on top of the device
    * pixel ratio, which is capped at 2). Below 1 the device is drawn into a smaller
-   * buffer and scaled up, which is the cheapest way to buy back frame time: the studio
-   * rig's rect-area lights cost per pixel, and they dominate the frame.
+   * buffer and scaled up, which is the cheapest way to buy back frame time. The studio
+   * rig is a baked environment (no per-pixel area lights), so 1 holds 50–60 fps; lower
+   * it only for very weak GPUs.
    *
    * The 2D screen overlays are separate DOM canvases drawn at full size, so the glass
    * and e-ink surfaces stay sharp whatever this is set to — only the metal softens.
@@ -74,7 +75,7 @@ export const DEVICE_VIEW_CONFIG: DeviceViewConfig = {
     roll: 0,
   },
   render: {
-    scale: 0.75,
+    scale: 1,
   },
 };
 
