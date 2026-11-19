@@ -56,6 +56,15 @@ export class Hero {
     luck: null,
   };
 
+  generate(): void {
+    this.name = GENESIS_BOY_NAMES[Math.floor(Math.random() * GENESIS_BOY_NAMES.length)];
+    this.blueprint.fitness = FITNESS_LEVELS[Math.floor(Math.random() * FITNESS_LEVELS.length)];
+    this.blueprint.finance = FINANCE_LEVELS[Math.floor(Math.random() * FINANCE_LEVELS.length)];
+    this.blueprint.personality = PERSONALITY_TYPES[Math.floor(Math.random() * PERSONALITY_TYPES.length)].trait;
+    this.blueprint.socialSkill = SOCIAL_SKILL_LEVELS[Math.floor(Math.random() * SOCIAL_SKILL_LEVELS.length)];
+    this.blueprint.luck = LUCK_LEVELS[Math.floor(Math.random() * LUCK_LEVELS.length)];
+  }
+
   reset(): void {
     this.name = '';
     this.blueprint.fitness = null;

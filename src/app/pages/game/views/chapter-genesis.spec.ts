@@ -18,12 +18,17 @@ describe('Genesis blueprint summary', () => {
     const hero = completeHero();
     const summary = new HeroSummary(hero);
     expect(summary.ready).toBeTrue();
-    expect(summary.entries.map(entry => entry.value)).toEqual([
-      'Fit', 'Stable', 'Open', 'Friendly', 'Lucky',
-    ]);
-    expect(summary.entries.every(entry => entry.description.length > 0)).toBeTrue();
+    const story = summary.paragraphs.join(' ');
+    expect(story).toContain('Andrei has the energy and stamina');
+    expect(story).toContain('His everyday needs are covered');
+    expect(story).toContain('Curiosity draws him');
+    expect(story).toContain('His friendly manner');
+    expect(story).toContain('Chance often lends a hand');
+    hero.blueprint.fitness = 'Frail';
+    expect(summary.paragraphs[0]).toContain('tires easily');
     hero.reset();
     expect(summary.ready).toBeFalse();
+    expect(summary.paragraphs).toEqual([]);
   });
 
   it('enables dot and arrow navigation after the traits settle', () => {
@@ -62,7 +67,7 @@ describe('Genesis blueprint summary', () => {
     chapter.paint(frame);
     expect(translate).toHaveBeenCalledWith(-525, 0);
     expect(translate).toHaveBeenCalledWith(75, 0);
-    expect(text.calls.allArgs().map(args => args[0])).toContain('LUCK · Lucky');
+    expect(text.calls.allArgs().map(args => args[0]).join(' ')).toContain('Chance often lends a hand');
     chapter.update(180);
     frame.hit.reset();
     chapter.paint(frame);
@@ -79,7 +84,18 @@ describe('Genesis blueprint summary', () => {
     chapter.press(frame.hit.find(311, 380)!);
     chapter.update(360);
     chapter.paint(frame);
-    expect(text.calls.allArgs().map(args => args[0])).toContain('LUCK · Lucky');
+    expect(text.calls.allArgs().map(args => args[0]).join(' ')).toContain('Chance often lends a hand');
+    for (const [width, height] of [[600, 400], [360, 640]]) {
+      text.calls.reset();
+      chapter.paint({ ...frame, width, height });
+      expect(text.calls.allArgs().map(args => args[0]).join(' ')).toBe(
+        new HeroSummary(hero).paragraphs.join(' '),
+      );
+      for (const [, , y] of text.calls.allArgs()) {
+        expect(y).toBeGreaterThanOrEqual(height * 0.06);
+        expect(y).toBeLessThan(height * 0.88);
+      }
+    }
     chapter.press('stepper:0');
     chapter.diceRolled({ total: 1, wheelOne: 0, wheelTwo: 1 });
     expect(hero.blueprint.luck).toBe('Lucky');

@@ -319,6 +319,14 @@ export class Game implements AfterViewInit, OnDestroy {
     setTimeout(() => this.copyState.set('idle'), 2000);
   }
 
+  protected generateHeroSummary(): void {
+    if (this.status() !== 'ready' || this.machine.currentState !== 'idle') return;
+    this.intro.skip();
+    this.introState.set('open');
+    this.router.generateHeroSummary();
+    this.panelOpen.set(false);
+  }
+
   /** Hands each template canvas to the overlay it backs, in config order. */
   private bindScreens(): void {
     const elements = this.screenRefs();
@@ -640,7 +648,8 @@ export class Game implements AfterViewInit, OnDestroy {
    * they simply stop reaching the views.
    */
   private updateCurfew(): void {
-    this.curfew.override = this.curfewOverride();
+    const skipSleep = this.route.snapshot.queryParamMap.get('skipSleep') === 'true';
+    this.curfew.override = skipSleep ? 'off' : this.curfewOverride();
 
     const rule = this.curfew.active();
     const blocked = rule !== null;

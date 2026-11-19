@@ -124,6 +124,17 @@ export class ScreenRouter implements ViewNav {
     this.openActivityMenu(1);
   }
 
+  generateHeroSummary(): void {
+    this.clearStack();
+    this.views.get('chapter-genesis')?.dispose?.();
+    this.views.delete('chapter-genesis');
+    this.hero.generate();
+    this.open('chapter-genesis');
+    (this.top as ChapterGenesis).showSummary();
+    this.recordCompletion();
+    this.invalidate();
+  }
+
   activityMenu(): void {
     this.openActivityMenu(0);
   }

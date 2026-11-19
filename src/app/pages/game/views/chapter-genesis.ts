@@ -29,6 +29,17 @@ export const GENESIS_PAGE_TRANSITION = {
   durationMs: 360,
 };
 
+export const GENESIS_STORY_STYLE = {
+  sidePaddingPercent: 9,
+  topPercent: 6,
+  bottomPercent: 12,
+  fontSizePercent: 4,
+  fontFamily: '"Segoe UI", system-ui, sans-serif',
+  fontWeight: 500,
+  lineHeight: 1.35,
+  paragraphGap: 0.8,
+};
+
 export class ChapterGenesis implements ScreenView {
   readonly id = 'chapter-genesis' as const;
   readonly completionNavigation = 'next-age' as const;
@@ -57,6 +68,14 @@ export class ChapterGenesis implements ScreenView {
 
   get completed(): boolean {
     return this.summaryAvailable;
+  }
+
+  showSummary(): void {
+    if (!this.summary.ready || !this.runtime) return;
+    this.runtime.finishAnimations();
+    this.showingSummary = true;
+    this.pagePosition = 1;
+    this.stepper.update(400, true);
   }
 
   key(key: string): boolean {
@@ -127,13 +146,22 @@ export class ChapterGenesis implements ScreenView {
   }
 
   get diceReady(): boolean {
-    return this.hero.blueprint.luck === null &&
-      this.runtime?.settled === true && !this.showingSummary && this.pagePosition === 0;
+    return (
+      this.hero.blueprint.luck === null &&
+      this.runtime?.settled === true &&
+      !this.showingSummary &&
+      this.pagePosition === 0
+    );
   }
 
   diceRolled(roll: DiceRoll): void {
-    if (!this.runtime || this.showingSummary || this.pagePosition !== 0 ||
-      this.hero.blueprint.luck !== null) return;
+    if (
+      !this.runtime ||
+      this.showingSummary ||
+      this.pagePosition !== 0 ||
+      this.hero.blueprint.luck !== null
+    )
+      return;
     if (this.hero.blueprint.socialSkill) {
       const level = LUCK_LEVELS[roll.total - 1];
       if (!level) return;
@@ -215,30 +243,37 @@ export class ChapterGenesis implements ScreenView {
   }
 
   private paintSummary({ ctx, width, height }: ViewFrame): void {
-    const padding = width * 0.08;
-    const textSize = Math.min(height * 0.045, width * 0.045);
+    const style = GENESIS_STORY_STYLE;
+    const padding = (width * style.sidePaddingPercent) / 100;
+    const availableWidth = width - padding * 2;
+    const top = (height * style.topPercent) / 100;
+    const availableHeight = height * (1 - (style.topPercent + style.bottomPercent) / 100);
+    const paragraphs = this.summary.paragraphs;
     ctx.save();
-    ctx.textBaseline = 'middle';
+    ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
     ctx.fillStyle = '#fff';
-    ctx.font = `700 ${textSize * 1.5}px "Segoe UI", sans-serif`;
-    ctx.fillText(this.hero.name, padding, height * 0.085, width - padding * 2);
-    ctx.fillStyle = '#aaa';
-    ctx.font = `500 ${textSize}px "Segoe UI", sans-serif`;
-    ctx.fillText('Your blueprint', padding, height * 0.15);
-
-    this.summary.entries.forEach((entry, index) => {
-      const top = height * (0.23 + index * 0.12);
-      ctx.fillStyle = '#f6a45d';
-      ctx.font = `700 ${textSize}px "Segoe UI", sans-serif`;
-      ctx.fillText(`${entry.label} · ${entry.value}`, padding, top, width - padding * 2);
-      ctx.fillStyle = '#eee';
-      ctx.font = `400 ${textSize}px "Segoe UI", sans-serif`;
-      wrap(ctx, entry.description, width - padding * 2).forEach((line, row) => {
-        ctx.fillText(line, padding, top + textSize * 1.4 + row * textSize * 1.25);
-      });
-    });
-
+    let textSize = Math.min((height * style.fontSizePercent) / 100, width * 0.06);
+    let lines: string[][] = [];
+    let blockHeight = 0;
+    do {
+      ctx.font = `${style.fontWeight} ${textSize}px ${style.fontFamily}`;
+      lines = paragraphs.map((paragraph) => wrap(ctx, paragraph, availableWidth));
+      const lineCount = lines.reduce((total, paragraph) => total + paragraph.length, 0);
+      blockHeight =
+        textSize *
+        (lineCount * style.lineHeight + Math.max(0, lines.length - 1) * style.paragraphGap);
+      if (blockHeight <= availableHeight) break;
+      textSize *= 0.95;
+    } while (textSize > 1);
+    let cursor = top + (availableHeight - blockHeight) / 2;
+    for (const paragraph of lines) {
+      for (const line of paragraph) {
+        ctx.fillText(line, padding, cursor);
+        cursor += textSize * style.lineHeight;
+      }
+      cursor += textSize * style.paragraphGap;
+    }
     ctx.restore();
   }
 

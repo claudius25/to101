@@ -1,8 +1,11 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { BoxGeometry, Mesh, Object3D, PerspectiveCamera, Vector3 } from 'three';
 
 import { Game } from './game';
+import { Curfew } from './e-ink/curfew';
+import { ScreenRouter } from './views/router';
+import { WritableSignal } from '@angular/core';
 
 describe('Game', () => {
   let component: Game;
@@ -26,6 +29,27 @@ describe('Game', () => {
 
   it('should create', () => {
     expect(component).toBeTruthy();
+  });
+
+  it('bypasses sleep windows only when skipSleep=true is in the URL', () => {
+    const game = component as unknown as {
+      curfew: Curfew;
+      curfewOverride: WritableSignal<string>;
+      router: ScreenRouter;
+      updateCurfew(): void;
+    };
+    const params = spyOnProperty(TestBed.inject(ActivatedRoute).snapshot, 'queryParamMap', 'get');
+    game.curfewOverride.set('bedtime');
+    params.and.returnValue(convertToParamMap({ skipSleep: 'true' }));
+    game.updateCurfew();
+    expect(game.router.blocked).toBeFalse();
+    expect(game.curfew.active(new Date(2026, 10, 19, 22))).toBeNull();
+    expect(game.curfew.active(new Date(2026, 10, 20, 2))).toBeNull();
+    for (const value of [undefined, 'false']) {
+      params.and.returnValue(convertToParamMap(value ? { skipSleep: value } : {}));
+      game.updateCurfew();
+      expect(game.router.blocked).toBeTrue();
+    }
   });
 
   it('should keep camera centering steady while the intro silhouette rotates', () => {

@@ -252,6 +252,33 @@ describe('Activity menu and progress', () => {
     router.dispose();
   });
 
+  it('generates a complete hero and opens its story immediately from the dev shortcut', () => {
+    spyOn(performance, 'now').and.returnValue(0);
+    const random = spyOn(Math, 'random').and.returnValue(0);
+    const router = new ScreenRouter();
+    router.generateHeroSummary();
+    expect(router.hero.name).toBe(GENESIS_BOY_NAMES[0]);
+    expect(Object.values(router.hero.blueprint).every(value => value !== null)).toBeTrue();
+    expect(router.diceReady).toBeFalse();
+    expect(new ActivityProgress().has('age-0', 'genesis')).toBeTrue();
+    const ctx = document.createElement('canvas').getContext('2d')!;
+    const text = spyOn(ctx, 'fillText');
+    router.paint({ ctx, width: 600, height: 400 } as Parameters<ScreenRouter['paint']>[0]);
+    expect(text.calls.allArgs().map(args => args[0]).join(' ')).toContain('Aaron tires easily');
+
+    random.and.returnValue(0.999);
+    router.generateHeroSummary();
+    expect(router.hero.name).toBe(GENESIS_BOY_NAMES[99]);
+    text.calls.reset();
+    router.paint({ ctx, width: 600, height: 400 } as Parameters<ScreenRouter['paint']>[0]);
+    expect(text.calls.allArgs().map(args => args[0]).join(' ')).toContain('Vlad moves');
+    router.key('enter');
+    expect(router.current).toBe('activities');
+    router.key('enter');
+    expect(router.current).toBe('chapter-tidy-bed');
+    router.dispose();
+  });
+
   it('uses the shared Enter icon for completed activities that handle their own touches', () => {
     new ActivityProgress().complete('age-0', 'genesis');
     const tidyComplete = spyOnProperty(ChapterTidyBed.prototype, 'completed', 'get').and.returnValue(false);

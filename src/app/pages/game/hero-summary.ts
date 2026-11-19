@@ -1,45 +1,45 @@
 import {
-  FinanceLevel, FitnessLevel, Hero, LuckLevel, PersonalityTrait, SocialSkillLevel, PERSONALITY_TYPES,
+  FinanceLevel, FitnessLevel, Hero, LuckLevel, PersonalityTrait, SocialSkillLevel,
 } from './hero';
 
 const FITNESS_DESCRIPTIONS: Record<FitnessLevel, string> = {
-  Frail: 'Low stamina, tires easily.',
-  Untrained: 'Needs practice to build endurance.',
-  Fit: 'Healthy stamina for daily challenges.',
-  Strong: 'Powerful and physically resilient.',
-  Athletic: 'Excellent strength and endurance.',
+  Frail: 'tires easily and needs time to recover from physical effort.',
+  Untrained: 'has yet to build his strength and endurance.',
+  Fit: 'has the energy and stamina to meet everyday challenges.',
+  Strong: 'has the strength to carry heavy burdens and keep going.',
+  Athletic: 'moves with the strength and endurance of an athlete.',
 };
 
 const FINANCE_DESCRIPTIONS: Record<FinanceLevel, string> = {
-  Strapped: 'Very limited money to spare.',
-  Modest: 'A small financial cushion.',
-  Stable: 'Enough resources for everyday needs.',
-  Affluent: 'Comfortable resources and more choices.',
-  Wealthy: 'Abundant resources for big ambitions.',
+  Strapped: 'Money is tight, so every expense matters.',
+  Modest: 'He starts with a small financial cushion and must spend carefully.',
+  Stable: 'His everyday needs are covered, giving him room to plan ahead.',
+  Affluent: 'A comfortable financial start gives him more choices.',
+  Wealthy: 'He starts with abundant resources and room for big ambitions.',
 };
 
 const PERSONALITY_DESCRIPTIONS: Record<PersonalityTrait, string> = {
-  openness: 'Curious and drawn to new ideas.',
-  conscientiousness: 'Organized, careful and dependable.',
-  extraversion: 'Energized by people and activity.',
-  agreeableness: 'Cooperative and considerate of others.',
-  neuroticism: 'Emotionally sensitive to stress.',
+  openness: 'Curiosity draws him toward unfamiliar ideas and experiences.',
+  conscientiousness: 'He likes to plan ahead, keep his promises and see things through.',
+  extraversion: 'People and lively surroundings bring out his energy.',
+  agreeableness: 'He considers how others feel and looks for common ground.',
+  neuroticism: 'He feels things deeply, and uncertainty can weigh on him.',
 };
 
 const SOCIAL_DESCRIPTIONS: Record<SocialSkillLevel, string> = {
-  Awkward: 'Finds social situations challenging.',
-  Reserved: 'Takes time to warm up.',
-  Friendly: 'Approachable and easy to talk to.',
-  Sociable: 'Builds connections with ease.',
-  Charming: 'Makes a warm, lasting impression.',
+  Awkward: 'Finding the right words with new people takes effort.',
+  Reserved: 'He takes his time warming up to new people.',
+  Friendly: 'His friendly manner makes him easy to approach and talk to.',
+  Sociable: 'Conversations come easily, helping him build new connections.',
+  Charming: 'His charm helps him make a warm and lasting impression.',
 };
 
 const LUCK_DESCRIPTIONS: Record<LuckLevel, string> = {
-  Cursed: 'Misfortune often finds its way in.',
-  Unlucky: 'Prone to unfortunate surprises.',
-  Ordinary: 'An even mix of good and bad breaks.',
-  Lucky: 'Good breaks tend to come along.',
-  Blessed: 'Fortune often turns in his favor.',
+  Cursed: 'Misfortune has a way of finding him, even when he plans carefully.',
+  Unlucky: 'Unexpected setbacks tend to cross his path.',
+  Ordinary: 'Chance brings him a fairly even mix of good and bad breaks.',
+  Lucky: 'Chance often lends a hand, opening doors when he least expects it.',
+  Blessed: 'Fortune often turns in his favor, even in difficult moments.',
 };
 
 export class HeroSummary {
@@ -49,14 +49,13 @@ export class HeroSummary {
     return !!this.hero.name && Object.values(this.hero.blueprint).every(value => value !== null);
   }
 
-  get entries(): { label: string; value: string; description: string }[] {
+  get paragraphs(): string[] {
+    if (!this.ready) return [];
     const { fitness, finance, personality, socialSkill, luck } = this.hero.blueprint;
     return [
-      { label: 'FITNESS', value: fitness ?? '', description: fitness ? FITNESS_DESCRIPTIONS[fitness] : 'Not revealed yet.' },
-      { label: 'FINANCE', value: finance ?? '', description: finance ? FINANCE_DESCRIPTIONS[finance] : 'Not revealed yet.' },
-      { label: 'TYPE', value: PERSONALITY_TYPES.find(type => type.trait === personality)?.label ?? '', description: personality ? PERSONALITY_DESCRIPTIONS[personality] : 'Not revealed yet.' },
-      { label: 'SOCIAL', value: socialSkill ?? '', description: socialSkill ? SOCIAL_DESCRIPTIONS[socialSkill] : 'Not revealed yet.' },
-      { label: 'LUCK', value: luck ?? '', description: luck ? LUCK_DESCRIPTIONS[luck] : 'Not revealed yet.' },
+      `${this.hero.name} ${FITNESS_DESCRIPTIONS[fitness!]} ${FINANCE_DESCRIPTIONS[finance!]}`,
+      `${PERSONALITY_DESCRIPTIONS[personality!]} ${SOCIAL_DESCRIPTIONS[socialSkill!]}`,
+      LUCK_DESCRIPTIONS[luck!],
     ];
   }
 }

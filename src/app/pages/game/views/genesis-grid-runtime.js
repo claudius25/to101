@@ -14,7 +14,7 @@ export function createGenesisGrid({ rows: rowCount = 17, fontSize, columnSpacing
   const font = `${fontSize}px "IBM Plex Mono", monospace`;
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const introStart = performance.now();
-  const introEnd = reducedMotion.matches ? introStart : introStart + 8 * 580 + 360;
+  let introEnd = reducedMotion.matches ? introStart : introStart + 8 * 580 + 360;
   const grid = Array.from({ length: columns }, () =>
     Array.from({ length: rows }, () => ({
       glyph: alphabet[Math.floor(Math.random() * alphabet.length)],
@@ -208,6 +208,22 @@ export function createGenesisGrid({ rows: rowCount = 17, fontSize, columnSpacing
       ));
     },
     resize,
+    finishAnimations() {
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = null;
+      const now = performance.now();
+      introEnd = now - highlightDuration;
+      for (const [col, slide] of motion) {
+        const cells = grid[col];
+        grid[col] = cells.map((_, row) => cells[wrapRow(row - slide.shift)]);
+      }
+      motion.clear();
+      for (const field of fields) {
+        field.highlightStart = null;
+        if (field.labelStart !== null) field.labelStart = now - highlightDuration;
+      }
+      draw(now);
+    },
     revealName: value => reveal(fields[0], value),
     revealFitness: value => reveal(fields[1], value),
     revealFinance: value => reveal(fields[2], value),

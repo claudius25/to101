@@ -51,6 +51,18 @@
       </button>
     </div>
 
+    <h2 class="dev__title">Hero</h2>
+    <div class="dev__actions">
+      <button
+        type="button"
+        class="dev__button"
+        [disabled]="status() !== 'ready' || rolling()"
+        (click)="generateHeroSummary()"
+      >
+        Generate hero &amp; view story
+      </button>
+    </div>
+
     <h2 class="dev__title">Camera</h2>
 
     <div class="dev__field">

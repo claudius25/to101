@@ -4,6 +4,7 @@ export interface GenesisGridRuntime {
   readonly height: number;
   readonly settled: boolean;
   resize(availableWidth: number): void;
+  finishAnimations(): void;
   revealName(name: string): void;
   revealFitness(fitness: string): void;
   revealFinance(finance: string): void;
