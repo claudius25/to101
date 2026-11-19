@@ -1,4 +1,4 @@
-import { ScreenView, ViewFrame, ViewNav } from './view';
+import { ScreenView, ViewFrame } from './view';
 import {
   FINANCE_LEVELS,
   FITNESS_LEVELS,
@@ -11,7 +11,7 @@ import {
 import { createGenesisGrid, GenesisGridRuntime } from './genesis-grid-runtime';
 import { DiceInterval, DiceRoll } from '../../../services/dice.service';
 import { HeroSummary } from '../hero-summary';
-import { roundedRect, wrap } from './ui';
+import { wrap } from './ui';
 import { StepperDots } from './components/stepper-dots';
 
 /** Dimensions in design pixels. Columns spread out when more width is available. */
@@ -31,6 +31,7 @@ export const GENESIS_PAGE_TRANSITION = {
 
 export class ChapterGenesis implements ScreenView {
   readonly id = 'chapter-genesis' as const;
+  readonly completionNavigation = 'next-age' as const;
   readonly animated = true;
   readonly briefing = {
     text: "You don't choose where you start. You choose what you do next.",
@@ -58,11 +59,7 @@ export class ChapterGenesis implements ScreenView {
     return this.summaryAvailable;
   }
 
-  key(key: string, nav?: ViewNav): boolean {
-    if (key === 'enter' && nav && this.canContinue) {
-      nav.nextAgeActivities();
-      return true;
-    }
+  key(key: string): boolean {
     if (this.showingSummary && key === 'close') {
       this.selectPage(false);
       return true;
@@ -84,17 +81,13 @@ export class ChapterGenesis implements ScreenView {
     this.pagePosition = this.transitionFrom + (target - this.transitionFrom) * eased;
   }
 
-  press(target: string, nav?: ViewNav): void {
+  press(target: string): void {
     if (!this.summaryAvailable) return;
-    if (target === 'genesis:continue' && nav && this.canContinue) {
-      nav.nextAgeActivities();
-      return;
-    }
     const page = this.stepper.pageForTarget(target);
     if (page !== null) this.selectPage(page === 1);
   }
 
-  private get canContinue(): boolean {
+  get canContinue(): boolean {
     return this.completed && this.showingSummary && this.pagePosition === 1;
   }
 
@@ -207,32 +200,7 @@ export class ChapterGenesis implements ScreenView {
       ctx.fillStyle = '#000';
       ctx.fillRect(0, height * 0.92, width, height * 0.08);
       this.stepper.paint(frame, this.showingSummary ? 1 : 0);
-      if (this.canContinue) this.paintContinue(frame);
     }
-  }
-
-  private paintContinue({ ctx, width, height, hit, pressed }: ViewFrame): void {
-    const size = Math.min(height * 0.065, width * 0.1);
-    const x = width * 0.94 - size;
-    const y = height * 0.95 - size / 2;
-    ctx.save();
-    roundedRect(ctx, x, y, size, size, size * 0.18);
-    ctx.fillStyle = pressed === 'genesis:continue' ? '#ffd2a9' : '#f6a45d';
-    ctx.fill();
-    ctx.strokeStyle = '#101419';
-    ctx.lineWidth = size * 0.07;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(x + size * 0.72, y + size * 0.28);
-    ctx.lineTo(x + size * 0.72, y + size * 0.58);
-    ctx.lineTo(x + size * 0.25, y + size * 0.58);
-    ctx.moveTo(x + size * 0.43, y + size * 0.4);
-    ctx.lineTo(x + size * 0.25, y + size * 0.58);
-    ctx.lineTo(x + size * 0.43, y + size * 0.76);
-    ctx.stroke();
-    ctx.restore();
-    hit.add('genesis:continue', x - size * 0.15, y - size * 0.15, size * 1.3, size * 1.3);
   }
 
   private paintMatrix({ ctx, width, height }: ViewFrame): void {

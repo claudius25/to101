@@ -12,6 +12,7 @@ import { ActivityProgress } from '../activities/activity-progress';
 import { AGE_RANGES } from '../activities/activities.config';
 import { Hero } from '../hero';
 import { DiceInterval, DiceRoll } from '../../../services/dice.service';
+import { COMPLETE_ACTIVITY_TARGET, paintCompleteActivity } from './components/complete-activity';
 
 /** Register every view here. Instances are created once and reused, so they keep state. */
 const FACTORIES: Record<Exclude<ViewId, 'activities'>, (hero: Hero) => ScreenView> = {
@@ -92,6 +93,19 @@ export class ScreenRouter implements ViewNav {
     return this.stack[this.stack.length - 1];
   }
 
+  private get completionAvailable(): boolean {
+    return this.top.completed === true && this.top.canContinue !== false;
+  }
+
+  private completeActivity(): void {
+    if (!this.completionAvailable) return;
+    if (this.top.completionNavigation === 'next-age') {
+      this.nextAgeActivities();
+    } else {
+      this.activityMenu();
+    }
+  }
+
   go(id: ViewId): void {
     this.recordCompletion();
     if (!this.progress.isUnlocked(id)) return;
@@ -107,12 +121,20 @@ export class ScreenRouter implements ViewNav {
   }
 
   nextAgeActivities(): void {
+    this.openActivityMenu(1);
+  }
+
+  activityMenu(): void {
+    this.openActivityMenu(0);
+  }
+
+  private openActivityMenu(ageOffset: number): void {
     const index = AGE_RANGES.findIndex(range =>
       range.activities.some(activity => activity.view === this.current),
     );
-    const next = AGE_RANGES[index + 1];
+    const range = AGE_RANGES[index + ageOffset];
     this.go('activities');
-    if (next) (this.top as ActivitiesView).selectAge(next.minAgeMonths);
+    if (range) (this.top as ActivitiesView).selectAge(range.minAgeMonths);
     this.invalidate();
   }
 
@@ -214,6 +236,7 @@ export class ScreenRouter implements ViewNav {
       this.hits.reset();
       entry.paint(view);
     }
+    if (this.completionAvailable) paintCompleteActivity(view);
   }
 
   /** Pointer phases from the overlay canvas, in canvas pixels. */
@@ -223,7 +246,7 @@ export class ScreenRouter implements ViewNav {
     }
 
     // A view that handles its own touches (a game, say) takes the whole stream.
-    if (this.top.pointer?.({ id, phase, x, y })) {
+    if (!this.completionAvailable && this.top.pointer?.({ id, phase, x, y })) {
       return;
     }
 
@@ -247,7 +270,11 @@ export class ScreenRouter implements ViewNav {
 
     // Same rule as a real button: it only fires if the finger lifts inside it.
     if (phase === 'up' && this.hits.find(x, y) === target) {
-      this.top.press?.(target, this);
+      if (target === COMPLETE_ACTIVITY_TARGET) {
+        this.completeActivity();
+      } else {
+        this.top.press?.(target, this);
+      }
     }
     this.invalidate();
   }
@@ -255,6 +282,11 @@ export class ScreenRouter implements ViewNav {
   /** A device key was pressed. The top view gets first refusal. */
   key(key: string): void {
     if (this.paused) {
+      return;
+    }
+
+    if (key === 'enter' && this.completionAvailable) {
+      this.completeActivity();
       return;
     }
 

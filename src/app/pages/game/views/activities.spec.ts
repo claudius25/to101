@@ -3,6 +3,7 @@ import { ageRange } from '../activities/age-range';
 import { ActivitiesView } from './activities';
 import { ChapterTidyBed } from './chapter-tidy-bed';
 import { ChapterGenesis } from './chapter-genesis';
+import { ChapterMouthClean } from './chapter-mouth-clean';
 import { FINANCE_LEVELS, FITNESS_LEVELS, GENESIS_BOY_NAMES, LUCK_LEVELS, PERSONALITY_TYPES, SOCIAL_SKILL_LEVELS } from '../hero';
 import { ScreenRouter } from './router';
 import { HitRegistry, ViewFrame } from './view';
@@ -227,6 +228,57 @@ describe('Activity menu and progress', () => {
     expect(labels).not.toContain('Genesis');
     router.key('enter');
     expect(router.current).toBe('chapter-tidy-bed');
+    router.dispose();
+  });
+
+  it('returns from a finished Tidy Bed to its age menu and unlocks Mouth Clean with Enter', () => {
+    new ActivityProgress().complete('age-0', 'genesis');
+    const router = new ScreenRouter('chapter-tidy-bed');
+    router.key('enter');
+    expect(router.current).toBe('chapter-tidy-bed');
+    router.key('left');
+    router.key('down');
+    router.key('right');
+    for (let frame = 0; frame < 200; frame++) router.update(60);
+    router.key('enter');
+    expect(router.current).toBe('activities');
+    expect(router.depth).toBe(1);
+    const progress = new ActivityProgress();
+    expect(progress.has('age-0-1', 'tidy-bed')).toBeTrue();
+    expect(progress.isUnlocked('chapter-mouth-clean')).toBeTrue();
+    router.key('right');
+    router.key('enter');
+    expect(router.current).toBe('chapter-mouth-clean');
+    router.dispose();
+  });
+
+  it('uses the shared Enter icon for completed activities that handle their own touches', () => {
+    new ActivityProgress().complete('age-0', 'genesis');
+    const tidyComplete = spyOnProperty(ChapterTidyBed.prototype, 'completed', 'get').and.returnValue(false);
+    const tidyPointer = spyOn(ChapterTidyBed.prototype, 'pointer').and.returnValue(true);
+    spyOn(ChapterMouthClean.prototype, 'enter');
+    spyOnProperty(ChapterMouthClean.prototype, 'completed', 'get').and.returnValue(true);
+    const ctx = document.createElement('canvas').getContext('2d')!;
+    const frame = { ctx, width: 600, height: 400 } as Parameters<ScreenRouter['paint']>[0];
+    const router = new ScreenRouter('chapter-tidy-bed');
+    router.paint(frame);
+    router.pointer('down', 1, 551, 380);
+    expect(tidyPointer).toHaveBeenCalled();
+    tidyComplete.and.returnValue(true);
+    tidyPointer.calls.reset();
+    router.paint(frame);
+    router.pointer('down', 1, 551, 380);
+    router.pointer('up', 1, 551, 380);
+    expect(tidyPointer).not.toHaveBeenCalled();
+    expect(router.current).toBe('activities');
+    expect(new ActivityProgress().isUnlocked('chapter-mouth-clean')).toBeTrue();
+
+    router.push('chapter-mouth-clean');
+    router.paint(frame);
+    router.pointer('down', 2, 551, 380);
+    router.pointer('up', 2, 551, 380);
+    expect(router.current).toBe('activities');
+    expect(new ActivityProgress().has('age-0-1', 'mouth-clean')).toBeTrue();
     router.dispose();
   });
 });

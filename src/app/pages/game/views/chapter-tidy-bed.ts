@@ -199,7 +199,10 @@ export class ChapterTidyBed implements ScreenView {
     ctx.fillRect(0, 0, width, height);
 
     if (this.before) {
+      ctx.save();
+      ctx.filter = 'grayscale(1)';
       drawCover(ctx, this.before, width, height);
+      ctx.restore();
     }
 
     ctx.save();

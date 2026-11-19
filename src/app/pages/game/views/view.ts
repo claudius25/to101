@@ -90,12 +90,17 @@ export interface ViewNav {
   reset(): void;
   /** Return to the menu with the age after the current chapter selected. */
   nextAgeActivities(): void;
+  /** Return to the menu for the current activity's age. */
+  activityMenu(): void;
 }
 
 export interface ScreenView {
   readonly id: ViewId;
   /** True once the current round's objective has been completed. */
   readonly completed?: boolean;
+  /** Completed views may delay the exit control until a summary is visible. */
+  readonly canContinue?: boolean;
+  readonly completionNavigation?: 'next-age';
   /**
    * Shown on the e-ink strip while this view is the topmost one that has a briefing,
    * unless a curfew window is in force. A pushed view without one leaves it alone.

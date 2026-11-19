@@ -31,7 +31,6 @@ describe('Genesis blueprint summary', () => {
     const now = spyOn(performance, 'now').and.returnValue(0);
     const hero = completeHero();
     const chapter = new ChapterGenesis(hero);
-    const nav = jasmine.createSpyObj('nav', ['nextAgeActivities']);
     chapter.enter();
     expect(chapter.diceReady).toBeFalse();
     chapter.update(400);
@@ -67,11 +66,7 @@ describe('Genesis blueprint summary', () => {
     chapter.update(180);
     frame.hit.reset();
     chapter.paint(frame);
-    expect(frame.hit.find(551, 380)).toBe('genesis:continue');
-    chapter.press('genesis:continue', nav);
-    expect(nav.nextAgeActivities).toHaveBeenCalledTimes(1);
-    expect(chapter.key('enter', nav)).toBeTrue();
-    expect(nav.nextAgeActivities).toHaveBeenCalledTimes(2);
+    expect(chapter.canContinue).toBeTrue();
     chapter.diceRolled({ total: 1, wheelOne: 0, wheelTwo: 1 });
     expect(hero.blueprint.luck).toBe('Lucky');
 
