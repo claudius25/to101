@@ -247,6 +247,13 @@ export class StudioLighting {
   private readonly owned: (Material | Texture)[] = [];
 
   private readonly worldQuaternion = new Quaternion();
+  private diceBlinkMs = 0;
+  private readonly diceLabelMaterials: {
+    material: MeshStandardMaterial;
+    color: Color;
+    emissive: Color;
+    intensity: number;
+  }[] = [];
 
   constructor(private readonly preset: StudioPreset = STUDIO_PRESET) {
     this.group.name = 'Studio rig';
@@ -293,6 +300,23 @@ export class StudioLighting {
       }
       this.glow(part, accent.color, accent.intensity);
     }
+
+    this.diceLabelMaterials.length = 0;
+    findPart(model, 'Label • ROLL THE DICE')?.traverse((node) => {
+      const mesh = node as Mesh;
+      if (!mesh.isMesh) return;
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const source of materials) {
+        const material = source as MeshStandardMaterial;
+        if (!material.isMeshStandardMaterial) continue;
+        this.diceLabelMaterials.push({
+          material,
+          color: material.color.clone(),
+          emissive: material.emissive.clone(),
+          intensity: material.emissiveIntensity,
+        });
+      }
+    });
 
     if (this.preset.directionals.length > 0) {
       const bounds = boundsIn(model, frame);
@@ -345,7 +369,24 @@ export class StudioLighting {
     scene.environmentRotation.setFromQuaternion(this.worldQuaternion);
   }
 
+  /** Blink only the lever lettering while a roll is available. */
+  updateDiceReadiness(ready: boolean, deltaMs: number): void {
+    this.diceBlinkMs = ready ? this.diceBlinkMs + deltaMs : 0;
+    const white = ready && this.diceBlinkMs % 1000 < 500;
+    for (const label of this.diceLabelMaterials) {
+      label.material.color.copy(label.color);
+      label.material.emissive.copy(label.emissive);
+      label.material.emissiveIntensity = label.intensity;
+      if (white) {
+        label.material.color.set('#fff');
+        label.material.emissive.set('#fff');
+        label.material.emissiveIntensity = 1;
+      }
+    }
+  }
+
   dispose(): void {
+    this.diceLabelMaterials.length = 0;
     this.group.traverse((node) => {
       (node as Partial<Light>).dispose?.();
     });

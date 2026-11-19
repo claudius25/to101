@@ -86,7 +86,7 @@ export function title(frame: ViewFrame, text: string, y: number): void {
 }
 
 /** Greedy word wrap to `maxWidth`, measured with the context's current font. */
-function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+export function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   const words = text.split(' ');
   const out: string[] = [];
   let current = '';

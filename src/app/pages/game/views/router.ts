@@ -1,5 +1,6 @@
 import { ScreenPaintContext, ScreenPointerPhase } from '../screens';
 import { EinkCard } from '../e-ink/eink-display';
+import { ChapterGenesis } from './chapter-genesis';
 import { ChapterMouthClean } from './chapter-mouth-clean';
 import { ChapterOne } from './chapter-one';
 import { ChapterTwo } from './chapter-two';
@@ -8,11 +9,13 @@ import { SettingsView } from './settings';
 import { HitRegistry, ScreenView, ViewFrame, ViewId, ViewNav } from './view';
 import { ActivitiesView } from './activities';
 import { ActivityProgress } from '../activities/activity-progress';
-import { ACTIVITIES_CONFIG } from '../activities/activities.config';
-import { ageRange } from '../activities/age-range';
+import { AGE_RANGES } from '../activities/activities.config';
+import { Hero } from '../hero';
+import { DiceInterval, DiceRoll } from '../../../services/dice.service';
 
 /** Register every view here. Instances are created once and reused, so they keep state. */
-const FACTORIES: Record<Exclude<ViewId, 'activities'>, () => ScreenView> = {
+const FACTORIES: Record<Exclude<ViewId, 'activities'>, (hero: Hero) => ScreenView> = {
+  'chapter-genesis': (hero) => new ChapterGenesis(hero),
   'chapter-mouth-clean': () => new ChapterMouthClean(),
   'chapter-1': () => new ChapterOne(),
   'chapter-2': () => new ChapterTwo(),
@@ -50,15 +53,16 @@ export class ScreenRouter implements ViewNav {
   private curfewed = false;
   private paused = false;
   private readonly progress = new ActivityProgress();
+  readonly hero = new Hero();
 
   constructor(initial: ViewId = 'activities') {
-    this.open(initial);
+    this.open(this.progress.isUnlocked(initial) ? initial : 'activities');
   }
 
   dispose(): void {
+    this.clearStack();
     for (const view of this.views.values()) view.dispose?.();
     this.views.clear();
-    this.stack.length = 0;
   }
 
   get current(): ViewId {
@@ -89,13 +93,32 @@ export class ScreenRouter implements ViewNav {
   }
 
   go(id: ViewId): void {
-    while (this.stack.length > 0) {
-      this.stack.pop()?.exit?.();
-    }
+    this.recordCompletion();
+    if (!this.progress.isUnlocked(id)) return;
+    this.clearStack();
     this.open(id);
   }
 
+  reset(): void {
+    this.dispose();
+    this.progress.reset();
+    this.hero.reset();
+    this.open('activities');
+  }
+
+  nextAgeActivities(): void {
+    const index = AGE_RANGES.findIndex(range =>
+      range.activities.some(activity => activity.view === this.current),
+    );
+    const next = AGE_RANGES[index + 1];
+    this.go('activities');
+    if (next) (this.top as ActivitiesView).selectAge(next.minAgeMonths);
+    this.invalidate();
+  }
+
   push(id: ViewId): void {
+    this.recordCompletion();
+    if (!this.progress.isUnlocked(id)) return;
     if (this.stack.some((view) => view.id === id)) {
       return;
     }
@@ -103,6 +126,7 @@ export class ScreenRouter implements ViewNav {
   }
 
   back(): void {
+    this.recordCompletion();
     if (this.stack.length <= 1) {
       if (this.current !== 'activities') this.go('activities');
       return;
@@ -133,8 +157,12 @@ export class ScreenRouter implements ViewNav {
       return;
     }
     this.top.update?.(deltaMs, this);
+    this.recordCompletion();
+  }
+
+  private recordCompletion(): void {
     if (this.top.completed) {
-      const range = ageRange(ACTIVITIES_CONFIG.ageMonths);
+      const range = AGE_RANGES.find((entry) => entry.activities.some((item) => item.view === this.current));
       const activity = range?.activities.find((item) => item.view === this.current);
       if (range && activity) this.progress.complete(range.id, activity.id);
     }
@@ -143,6 +171,19 @@ export class ScreenRouter implements ViewNav {
   /** Re-emits the current stack, so callbacks wired after construction catch up. */
   announce(): void {
     this.changed();
+  }
+
+  get diceInterval(): DiceInterval | undefined {
+    return this.top.diceInterval;
+  }
+
+  get diceReady(): boolean {
+    return !this.paused && this.top.diceReady === true;
+  }
+
+  diceRolled(roll: DiceRoll): void {
+    if (this.paused) return;
+    this.top.diceRolled?.(roll);
   }
 
   /** Paints the whole stack bottom-up; only the top view's hotspots survive. */
@@ -249,7 +290,7 @@ export class ScreenRouter implements ViewNav {
   private open(id: ViewId): void {
     let view = this.views.get(id);
     if (!view) {
-      view = id === 'activities' ? new ActivitiesView(this.progress) : FACTORIES[id]();
+      view = id === 'activities' ? new ActivitiesView(this.progress) : FACTORIES[id](this.hero);
       this.views.set(id, view);
     }
 
@@ -261,6 +302,12 @@ export class ScreenRouter implements ViewNav {
     this.stack.push(view);
     view.enter?.(this);
     this.changed();
+  }
+
+  private clearStack(): void {
+    while (this.stack.length > 0) {
+      this.stack.pop()?.exit?.();
+    }
   }
 
   private changed(): void {

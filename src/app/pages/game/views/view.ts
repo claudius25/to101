@@ -1,5 +1,6 @@
 import { ScreenInfo, ScreenPointerPhase } from '../screens';
 import { EinkCard } from '../e-ink/eink-display';
+import { DiceInterval, DiceRoll } from '../../../services/dice.service';
 
 /**
  * A *view* is one full-screen 2D drawing on the glass screen: a chapter, a menu, a
@@ -15,7 +16,7 @@ import { EinkCard } from '../e-ink/eink-display';
  * Adding a screen: add its id to `ViewId`, write the class, register it in
  * `views/router.ts`.
  */
-export type ViewId = 'activities' | 'chapter-mouth-clean' | 'chapter-1' | 'chapter-2' | 'chapter-tidy-bed' | 'settings';
+export type ViewId = 'activities' | 'chapter-genesis' | 'chapter-mouth-clean' | 'chapter-1' | 'chapter-2' | 'chapter-tidy-bed' | 'settings';
 
 /** One finger, in canvas pixels. Views that want multi-touch track these by `id`. */
 export interface ViewPointer {
@@ -85,6 +86,10 @@ export interface ViewNav {
   /** Lay a view on top of the current one — use it for menus and dialogs. */
   push(id: ViewId): void;
   back(): void;
+  /** Clear saved activity progress and return to the starting menu. */
+  reset(): void;
+  /** Return to the menu with the age after the current chapter selected. */
+  nextAgeActivities(): void;
 }
 
 export interface ScreenView {
@@ -104,6 +109,11 @@ export interface ScreenView {
   dispose?(): void;
   /** Advances the view, once per frame, while the screen is live and unblocked. */
   update?(deltaMs: number, nav: ViewNav): void;
+  /** Called when the device dice finish rolling while this view is active. */
+  readonly diceInterval?: DiceInterval;
+  /** True when this view is waiting for a dice result. */
+  readonly diceReady?: boolean;
+  diceRolled?(roll: DiceRoll): void;
   /** The screen stopped being live or got blocked: drop anything held. */
   suspend?(): void;
   paint(frame: ViewFrame): void;

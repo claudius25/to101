@@ -1,27 +1,48 @@
-import { ACTIVITIES_CONFIG } from '../activities/activities.config';
+import { ACTIVITIES_CONFIG, AGE_RANGES } from '../activities/activities.config';
 import { ageRange } from '../activities/age-range';
 import { ActivityProgress } from '../activities/activity-progress';
+import { AgeSlider } from './components/age-slider';
 import { ScreenView, ViewFrame, ViewNav } from './view';
-import { font } from './ui';
+import { font, roundedRect } from './ui';
 
 const PAGE_SIZE = 6;
 
 export class ActivitiesView implements ScreenView {
   readonly id = 'activities' as const;
   readonly briefing = {
-    text: 'Choose an activity',
+    text: '',
     fontSize: 15,
-    character: 'assets/e-ink/doc.png',
+    character: null,
   };
 
-  private readonly range = ageRange(ACTIVITIES_CONFIG.ageMonths);
+  private range = ageRange(ACTIVITIES_CONFIG.ageMonths);
+  private readonly ageSlider = new AgeSlider(
+    Array.from({ length: 6 }, (_, age) => ({ age, enabled: !!ageRange(age * 12) })),
+    Math.floor(ACTIVITIES_CONFIG.ageMonths / 12),
+  );
   private readonly icons = new Map<string, HTMLImageElement>();
   private focus = 0;
 
   constructor(private readonly progress: ActivityProgress) {}
 
+  selectAge(ageMonths: number): void {
+    const range = ageRange(ageMonths);
+    if (!range) return;
+    this.ageSlider.select(Math.floor(ageMonths / 12));
+    this.range = range;
+    this.focus = 0;
+  }
+
+  get animated(): boolean {
+    return this.ageSlider.animated;
+  }
+
+  update(deltaMs: number): void {
+    this.ageSlider.update(deltaMs);
+  }
+
   enter(): void {
-    for (const activity of this.range?.activities ?? []) {
+    for (const activity of AGE_RANGES.flatMap((range) => range.activities)) {
       if (this.icons.has(activity.icon)) continue;
       const image = new Image();
       image.src = activity.icon;
@@ -33,72 +54,105 @@ export class ActivitiesView implements ScreenView {
     const { ctx, width, height, unit, hit } = frame;
     ctx.fillStyle = '#101419';
     ctx.fillRect(0, 0, width, height);
-    const title = ACTIVITIES_CONFIG.title;
-    if (title.visible) {
-      const anchors = {
-        left: unit * title.sidePadding,
-        center: width / 2,
-        right: width - unit * title.sidePadding,
-      };
-      ctx.save();
-      ctx.textAlign = title.align;
-      ctx.textBaseline = title.baseline;
-      ctx.fillStyle = title.color;
-      ctx.font = `${title.fontStyle} ${title.fontWeight} ${unit * title.fontSize}px ${title.fontFamily}`;
-      ctx.fillText(
-        this.range?.label ?? 'Interval neconfigurat',
-        anchors[title.align] + unit * title.offsetX,
-        unit * title.y,
-      );
-      ctx.restore();
-    }
-
+    this.ageSlider.paint(frame);
     const activities = this.range?.activities ?? [];
     const page = Math.floor(this.focus / PAGE_SIZE);
     const layout = ACTIVITIES_CONFIG.layout;
+    const pageActivities = activities.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
     const gap = unit * layout.gap;
-    const tileSize = Math.min(
-      (width - unit * layout.sidePadding * 2 - gap) / 2,
-      unit * layout.tileSize,
-    );
-    const gridX = (width - tileSize * 2 - gap) / 2;
-    activities.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).forEach((activity, slot) => {
+    const rows = Math.max(1, Math.ceil(pageActivities.length / 2));
+    const footer = unit * (activities.length > PAGE_SIZE ? 12 : 7);
+    const contentTop = unit * layout.topPadding;
+    const contentHeight = height - contentTop - footer;
+    const rowGaps = gap * (rows - 1);
+    const cardWidth = (width - unit * layout.sidePadding * 2 - gap) / 2;
+    const cardHeight = Math.min(unit * layout.tileSize, (contentHeight - rowGaps) / rows);
+    const gridY = contentTop + (contentHeight - rows * cardHeight - rowGaps) / 2;
+    const gridX = activities.length === 1 ? (width - cardWidth) / 2 : unit * layout.sidePadding;
+
+    pageActivities.forEach((activity, slot) => {
       const index = page * PAGE_SIZE + slot;
-      const x = gridX + (slot % 2) * (tileSize + gap);
-      const y = unit * layout.topPadding + Math.floor(slot / 2) * (tileSize + gap);
+      const x = gridX + (slot % 2) * (cardWidth + gap);
+      const y = gridY + Math.floor(slot / 2) * (cardHeight + gap);
       const done = this.progress.has(this.range!.id, activity.id);
+      const unlocked = this.progress.isUnlocked(activity.view);
       const target = `activity:${index}`;
-      ctx.beginPath();
-      ctx.rect(x, y, tileSize, tileSize);
-      ctx.fillStyle = done ? activity.color : '#363c44';
+      const focused = index === this.focus;
+      const pressed = unlocked && frame.pressed === target;
+      const radius = unit * 2.2;
+      const labelHeight = Math.min(unit * 10, cardHeight * 0.28);
+      const imageHeight = cardHeight - labelHeight;
+      const inset = unit * 2;
+
+      ctx.save();
+      ctx.globalAlpha = unlocked ? 1 : 0.4;
+      roundedRect(ctx, x, y, cardWidth, cardHeight, radius);
+      ctx.fillStyle = pressed ? '#34312c' : '#1c2227';
       ctx.fill();
-      ctx.strokeStyle = index === this.focus || frame.pressed === target ? '#f4f3eb' : '#555e68';
-      ctx.lineWidth = unit * layout.borderWidth;
-      ctx.stroke();
+      ctx.save();
+      ctx.clip();
+      ctx.fillStyle = done ? activity.color : '#d5d3cc';
+      ctx.fillRect(x, y, cardWidth, imageHeight);
 
       const image = this.icons.get(activity.icon);
       if (image?.complete && image.naturalWidth > 0) {
-        const size = tileSize * layout.iconScale;
-        const scale = Math.min(size / image.naturalWidth, size / image.naturalHeight);
+        const scale =
+          Math.min(
+            (cardWidth - inset * 2) / image.naturalWidth,
+            (imageHeight - inset * 2) / image.naturalHeight,
+          ) * layout.iconScale;
         const iconWidth = image.naturalWidth * scale;
         const iconHeight = image.naturalHeight * scale;
-        ctx.save();
         ctx.filter = done ? 'none' : 'grayscale(1)';
-        ctx.drawImage(image, x + (tileSize - iconWidth) / 2, y + (tileSize - iconHeight) / 2, iconWidth, iconHeight);
-        ctx.restore();
+        ctx.drawImage(
+          image,
+          x + (cardWidth - iconWidth) / 2,
+          y + (imageHeight - iconHeight) / 2,
+          iconWidth,
+          iconHeight,
+        );
+        ctx.filter = 'none';
       }
-      if (done) {
+      ctx.restore();
+
+      roundedRect(ctx, x, y, cardWidth, cardHeight, radius);
+      ctx.strokeStyle = focused || pressed ? '#f6a45d' : '#465057';
+      ctx.lineWidth = unit * layout.borderWidth * (focused || pressed ? 2 : 1);
+      ctx.stroke();
+      ctx.fillStyle = focused ? '#ffd2a9' : '#f4f3eb';
+      ctx.font = font(frame, Math.min(4.4, (labelHeight / unit) * 0.44), 600);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(
+        activity.label,
+        x + unit * 3,
+        y + imageHeight + labelHeight / 2,
+        cardWidth - unit * (done || !unlocked ? 12 : 6),
+      );
+
+      if (!unlocked) {
+        const lockX = x + cardWidth - unit * 7;
+        const lockY = y + imageHeight + labelHeight / 2;
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = '#c2c7cc';
+        ctx.lineWidth = unit * 0.6;
         ctx.beginPath();
-        ctx.moveTo(x + tileSize - unit * 8, y + unit * 4);
-        ctx.lineTo(x + tileSize - unit * 6, y + unit * 6);
-        ctx.lineTo(x + tileSize - unit * 3, y + unit * 2.5);
-        ctx.strokeStyle = '#10251b';
+        ctx.arc(lockX, lockY - unit, unit * 1.7, Math.PI, 0);
+        ctx.stroke();
+        roundedRect(ctx, lockX - unit * 2.3, lockY - unit, unit * 4.6, unit * 3.5, unit * 0.5);
+        ctx.stroke();
+      } else if (done) {
+        ctx.beginPath();
+        ctx.moveTo(x + cardWidth - unit * 8, y + imageHeight + labelHeight / 2);
+        ctx.lineTo(x + cardWidth - unit * 6, y + imageHeight + labelHeight / 2 + unit * 2);
+        ctx.lineTo(x + cardWidth - unit * 3, y + imageHeight + labelHeight / 2 - unit * 2);
+        ctx.strokeStyle = '#a6d8b8';
         ctx.lineWidth = unit * 0.8;
         ctx.stroke();
       }
-      hit.add(target, x, y, tileSize, tileSize);
+      ctx.restore();
+      if (unlocked) hit.add(target, x, y, cardWidth, cardHeight);
     });
-
     if (activities.length > PAGE_SIZE) {
       ctx.fillStyle = '#f4f3eb';
       ctx.font = font(frame, 4.5);
@@ -116,6 +170,14 @@ export class ActivitiesView implements ScreenView {
   }
 
   press(target: string, nav: ViewNav): void {
+    if (target.startsWith('age:')) {
+      const age = Number(target.slice(4));
+      const range = ageRange(age * 12);
+      if (range && range !== this.range) {
+        this.selectAge(age * 12);
+      }
+      return;
+    }
     const activities = this.range?.activities ?? [];
     if (!activities.length) return;
     if (target === 'previous' || target === 'next') {
@@ -126,7 +188,7 @@ export class ActivitiesView implements ScreenView {
     }
     const index = Number(target.replace('activity:', ''));
     const activity = activities[index];
-    if (!activity) return;
+    if (!activity || !this.progress.isUnlocked(activity.view)) return;
     this.focus = index;
     nav.push(activity.view);
   }

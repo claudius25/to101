@@ -22,8 +22,8 @@ export interface EinkCard {
   text: string;
   /** Preferred font size in units of 1% of the strip height; shrinks only to fit. */
   fontSize: number;
-  /** Art shown beside the text. Missing or broken files simply leave it out. */
-  character?: string;
+  /** Omit this for the default character, or set it to null for text only. */
+  character?: string | null;
 }
 
 /** Tightest box around the non-transparent pixels, so padding in the art is ignored. */
@@ -129,8 +129,8 @@ export class EinkDisplay {
     const boxHeight = height - unit * padding * 2;
 
     // A card with no art, or art that failed to load, gives the text the whole width.
-    const source = card.character ?? this.config.character;
-    const hasArt = this.prepare(source);
+    const source = card.character === undefined ? this.config.character : card.character;
+    const hasArt = source !== null && this.prepare(source);
     const artWidth = hasArt ? boxWidth * characterWidth : 0;
     const textX = boxX + (hasArt ? artWidth + unit * gap : 0);
     const textWidth = boxWidth - (hasArt ? artWidth + unit * gap : 0);

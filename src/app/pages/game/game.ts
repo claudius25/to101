@@ -210,6 +210,7 @@ export class Game implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.dice.setReady(false);
     cancelAnimationFrame(this.frameHandle);
 
     const canvas = this.canvasRef().nativeElement;
@@ -373,6 +374,7 @@ export class Game implements AfterViewInit, OnDestroy {
       this.zone.run(() => {
         this.lastRoll.set(roll);
         this.rolling.set(false);
+        this.router.diceRolled(roll);
       });
     this.keypad.onPress = (id) => {
       this.router.key(id);
@@ -437,9 +439,13 @@ export class Game implements AfterViewInit, OnDestroy {
       return;
     }
 
+    this.syncDiceReadiness();
+    const roll = this.dice.roll(this.router.diceInterval);
+    if (!roll) return;
     event.preventDefault();
     this.leverPointerId = event.pointerId;
-    this.machine.press(this.dice.roll());
+    this.machine.press(roll);
+    this.lighting.updateDiceReadiness(false, 0);
     this.zone.run(() => this.rolling.set(true));
   };
 
@@ -568,10 +574,23 @@ export class Game implements AfterViewInit, OnDestroy {
     this.keypad.update(deltaMs);
     this.activeCamera = this.updateCamera();
     this.updateScreens(deltaMs, this.activeCamera);
+    this.syncDiceReadiness();
+    this.lighting.updateDiceReadiness(this.dice.ready, deltaMs);
     // Turn the baked studio with the device, so its highlights stay on the keypad and rollers.
     this.lighting.update();
     renderer.render(this.scene, this.activeCamera);
   };
+
+  private syncDiceReadiness(): void {
+    this.dice.setReady(
+      this.intro.finished &&
+      this.status() === 'ready' &&
+      this.atHomePose() &&
+      this.machine.ready &&
+      this.machine.currentState === 'idle' &&
+      this.router.diceReady,
+    );
+  }
 
   /**
    * Averages the frame rate over a short window and publishes it. The render loop runs

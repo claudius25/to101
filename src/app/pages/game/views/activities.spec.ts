@@ -2,6 +2,8 @@ import { ActivityProgress } from '../activities/activity-progress';
 import { ageRange } from '../activities/age-range';
 import { ActivitiesView } from './activities';
 import { ChapterTidyBed } from './chapter-tidy-bed';
+import { ChapterGenesis } from './chapter-genesis';
+import { FINANCE_LEVELS, FITNESS_LEVELS, GENESIS_BOY_NAMES, LUCK_LEVELS, PERSONALITY_TYPES, SOCIAL_SKILL_LEVELS } from '../hero';
 import { ScreenRouter } from './router';
 import { HitRegistry, ViewFrame } from './view';
 
@@ -15,9 +17,10 @@ describe('Activity menu and progress', () => {
   });
 
   it('matches the configured age interval with an exclusive upper bound', () => {
-    expect(ageRange(0)?.id).toBe('age-0-1');
-    expect(ageRange(11)?.id).toBe('age-0-1');
-    expect(ageRange(12)).toBeUndefined();
+    expect(ageRange(0)?.id).toBe('age-0');
+    expect(ageRange(11)?.id).toBe('age-0');
+    expect(ageRange(12)?.label).toBe('1');
+    expect(ageRange(24)).toBeUndefined();
     expect(ageRange(-1)).toBeUndefined();
   });
 
@@ -38,16 +41,106 @@ describe('Activity menu and progress', () => {
     expect(progress.has('age-0-1', 'tidy-bed')).toBeTrue();
   });
 
+  it('clears saved progress and returns to Genesis through the Settings reset', () => {
+    new ActivityProgress().complete('age-0-1', 'tidy-bed');
+    const router = new ScreenRouter();
+    router.key('settings');
+    expect(router.current).toBe('settings');
+
+    router.key('enter');
+    expect(router.current).toBe('activities');
+    expect(router.depth).toBe(1);
+    expect(new ActivityProgress().has('age-0-1', 'tidy-bed')).toBeFalse();
+    router.key('enter');
+    expect(router.current).toBe('chapter-genesis');
+    router.dispose();
+  });
+
+  it('assigns the Genesis traits in order using the rolled levels', () => {
+    expect(new Set(GENESIS_BOY_NAMES).size).toBe(100);
+    expect(GENESIS_BOY_NAMES.every((name) => name.length <= 12)).toBeTrue();
+    const router = new ScreenRouter();
+    router.diceRolled({ total: 1, wheelOne: 0, wheelTwo: 1 });
+    expect(router.hero.name).toBe('');
+
+    router.key('enter');
+    router.diceRolled({ total: 1, wheelOne: 0, wheelTwo: 1 });
+    const first = router.hero.name;
+    expect(GENESIS_BOY_NAMES).toContain(first);
+    expect(router.hero.blueprint.fitness).toBeNull();
+    expect(router.diceInterval).toEqual({ min: 1, max: 5 });
+    router.diceRolled({ total: 3, wheelOne: 1, wheelTwo: 2 });
+    expect(router.hero.name).toBe(first);
+    expect(router.hero.blueprint.fitness).toBe(FITNESS_LEVELS[2]);
+    expect(router.hero.blueprint.finance).toBeNull();
+    expect(router.diceInterval).toEqual({ min: 1, max: 5 });
+    router.diceRolled({ total: 5, wheelOne: 2, wheelTwo: 3 });
+    expect(router.hero.blueprint.finance).toBe(FINANCE_LEVELS[4]);
+    expect(router.hero.blueprint.fitness).toBe(FITNESS_LEVELS[2]);
+    expect(router.hero.blueprint.personality).toBeNull();
+    router.diceRolled({ total: 5, wheelOne: 2, wheelTwo: 3 });
+    expect(router.hero.blueprint.personality).toBe(PERSONALITY_TYPES[4].trait);
+    expect(router.hero.blueprint.socialSkill).toBeNull();
+    expect(router.diceInterval).toEqual({ min: 1, max: 5 });
+    router.diceRolled({ total: 1, wheelOne: 0, wheelTwo: 1 });
+    expect(router.hero.blueprint.socialSkill).toBe(SOCIAL_SKILL_LEVELS[0]);
+    expect(router.hero.blueprint.luck).toBeNull();
+    router.diceRolled({ total: 5, wheelOne: 2, wheelTwo: 3 });
+    expect(router.hero.blueprint.luck).toBe(LUCK_LEVELS[4]);
+    expect(router.diceReady).toBeFalse();
+    expect(router.hero.blueprint.socialSkill).toBe(SOCIAL_SKILL_LEVELS[0]);
+    router.diceRolled({ total: 1, wheelOne: 0, wheelTwo: 1 });
+    expect(router.hero.blueprint.luck).toBe(LUCK_LEVELS[4]);
+    expect(router.hero.blueprint.personality).toBe(PERSONALITY_TYPES[4].trait);
+    expect(router.hero.blueprint.finance).toBe(FINANCE_LEVELS[4]);
+
+    router.reset();
+    expect(router.hero.name).toBe('');
+    expect(router.hero.blueprint.fitness).toBeNull();
+    expect(router.hero.blueprint.finance).toBeNull();
+    expect(router.hero.blueprint.personality).toBeNull();
+    expect(router.hero.blueprint.socialSkill).toBeNull();
+    expect(router.hero.blueprint.luck).toBeNull();
+    router.dispose();
+  });
+
   it('renders touch targets and opens the selected chapter with the keypad', () => {
-    const menu = new ActivitiesView(new ActivityProgress());
+    const progress = new ActivityProgress();
+    const menu = new ActivitiesView(progress);
     const canvas = document.createElement('canvas');
     const frame = {
       ctx: canvas.getContext('2d')!, width: 600, height: 400, unit: 4,
       hit: new HitRegistry(), pressed: null,
     } as ViewFrame;
     menu.paint(frame);
-    expect(frame.hit.find(250, 100)).toBe('activity:0');
+    expect(frame.hit.find(38, 44)).toBe('age:0');
+    const ageOne = frame.hit.find(195, 44);
+    expect(ageOne).toBe('age:1');
+    expect(frame.hit.find(300, 234)).toBe('activity:0');
+    expect(frame.hit.find(150, 234)).toBeNull();
+    expect(frame.hit.find(450, 234)).toBeNull();
+    expect(frame.hit.find(300, 90)).toBeNull();
+    expect(frame.hit.find(300, 380)).toBeNull();
     const nav = jasmine.createSpyObj('nav', ['push']);
+    menu.key('enter', nav);
+    menu.press('activity:0', nav);
+    expect(nav.push.calls.allArgs()).toEqual([['chapter-genesis'], ['chapter-genesis']]);
+
+    menu.press(ageOne!, nav);
+    menu.key('right', nav);
+    menu.key('enter', nav);
+    expect(nav.push.calls.count()).toBe(2);
+    frame.hit.reset();
+    menu.paint(frame);
+    expect(frame.hit.find(150, 234)).toBeNull();
+    expect(frame.hit.find(450, 234)).toBeNull();
+
+    progress.complete('age-0', 'genesis');
+    menu.press('activity:1', nav);
+    expect(nav.push.calls.count()).toBe(2);
+    menu.press('activity:0', nav);
+    expect(nav.push).toHaveBeenCalledWith('chapter-tidy-bed');
+    progress.complete('age-0-1', 'tidy-bed');
     menu.key('right', nav);
     menu.key('enter', nav);
     expect(nav.push).toHaveBeenCalledWith('chapter-mouth-clean');
@@ -56,10 +149,15 @@ describe('Activity menu and progress', () => {
   });
 
   it('saves only completed chapters and returns to the menu through close', () => {
+    new ActivityProgress().complete('age-0', 'genesis');
     spyOn(ChapterTidyBed.prototype, 'enter');
     spyOn(ChapterTidyBed.prototype, 'update');
     const completed = spyOnProperty(ChapterTidyBed.prototype, 'completed', 'get').and.returnValue(false);
     const router = new ScreenRouter();
+    expect(router.current).toBe('activities');
+    router.key('enter');
+    expect(router.current).toBe('chapter-genesis');
+    router.key('close');
     expect(router.current).toBe('activities');
     router.push('chapter-tidy-bed');
     router.update(16);
@@ -70,6 +168,65 @@ describe('Activity menu and progress', () => {
     router.key('close');
     expect(router.current).toBe('activities');
     expect(router.depth).toBe(1);
+    router.dispose();
+  });
+
+  it('blocks navigation until Genesis completes and preserves the unlock after reloading', () => {
+    const completed = spyOnProperty(ChapterGenesis.prototype, 'completed', 'get').and.returnValue(false);
+    const router = new ScreenRouter();
+    router.push('chapter-tidy-bed');
+    router.go('chapter-mouth-clean');
+    expect(router.current).toBe('activities');
+    router.key('enter');
+    router.update(16);
+    expect(new ActivityProgress().isUnlocked('chapter-tidy-bed')).toBeFalse();
+    completed.and.returnValue(true);
+    router.update(16);
+    router.key('close');
+    router.push('chapter-mouth-clean');
+    expect(router.current).toBe('activities');
+    router.push('chapter-tidy-bed');
+    expect(router.current).toBe('chapter-tidy-bed');
+    expect(new ActivityProgress().isUnlocked('chapter-tidy-bed')).toBeTrue();
+    router.dispose();
+  });
+
+  it('requires earlier activities even when old saves contain later completions', () => {
+    const progress = new ActivityProgress();
+    progress.complete('age-0-1', 'tidy-bed');
+    expect(progress.isUnlocked('chapter-mouth-clean')).toBeFalse();
+    progress.complete('age-0', 'genesis');
+    expect(progress.isUnlocked('chapter-mouth-clean')).toBeTrue();
+    progress.reset();
+    expect(progress.isUnlocked('chapter-genesis')).toBeTrue();
+    expect(progress.isUnlocked('chapter-tidy-bed')).toBeFalse();
+  });
+
+  it('continues from the completed summary to the next age activities with Enter', () => {
+    spyOn(window, 'matchMedia').and.returnValue({ matches: false } as MediaQueryList);
+    const now = spyOn(performance, 'now').and.returnValue(0);
+    const router = new ScreenRouter();
+    router.hero.name = 'Andrei';
+    Object.assign(router.hero.blueprint, {
+      fitness: 'Fit', finance: 'Stable', personality: 'openness',
+      socialSkill: 'Friendly', luck: 'Lucky',
+    });
+    router.key('enter');
+    now.and.returnValue(6000);
+    router.update(400);
+    router.key('right');
+    router.update(360);
+    router.key('enter');
+    expect(router.current).toBe('activities');
+    expect(router.depth).toBe(1);
+    const ctx = document.createElement('canvas').getContext('2d')!;
+    const text = spyOn(ctx, 'fillText');
+    router.paint({ ctx, width: 600, height: 400 } as Parameters<ScreenRouter['paint']>[0]);
+    const labels = text.calls.allArgs().map(args => args[0]);
+    expect(labels).toContain('Tidy bed');
+    expect(labels).not.toContain('Genesis');
+    router.key('enter');
+    expect(router.current).toBe('chapter-tidy-bed');
     router.dispose();
   });
 });
