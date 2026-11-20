@@ -30,7 +30,11 @@ export class ActivitiesView implements ScreenView {
     this.age = Math.floor(ageMonths / 12);
     this.ageSlider.select(this.age);
     this.range = range;
-    this.focus = 0;
+    // Land on the first activity that is open and not done yet, so Enter carries on from there.
+    const next = range.activities.findIndex(
+      (activity) => this.progress.isUnlocked(activity.view) && !this.progress.has(range.id, activity.id),
+    );
+    this.focus = Math.max(0, next);
   }
 
   get animated(): boolean {

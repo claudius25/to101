@@ -16,7 +16,7 @@ import { DiceInterval, DiceRoll } from '../../../services/dice.service';
  * Adding a screen: add its id to `ViewId`, write the class, register it in
  * `views/router.ts`.
  */
-export type ViewId = 'activities' | 'chapter-genesis' | 'chapter-mouth-clean' | 'chapter-1' | 'chapter-2' | 'chapter-tidy-bed' | 'settings';
+export type ViewId = 'activities' | 'chapter-genesis' | 'chapter-baby-delivery' | 'chapter-mouth-clean' | 'chapter-1' | 'chapter-2' | 'chapter-tidy-bed' | 'settings';
 
 /** One finger, in canvas pixels. Views that want multi-touch track these by `id`. */
 export interface ViewPointer {

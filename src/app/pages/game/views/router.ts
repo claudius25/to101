@@ -1,6 +1,7 @@
 import { ScreenPaintContext, ScreenPointerPhase } from '../screens';
 import { EinkCard } from '../e-ink/eink-display';
 import { ChapterGenesis } from './chapter-genesis';
+import { ChapterBabyDelivery } from './chapter-baby-delivery';
 import { ChapterMouthClean } from './chapter-mouth-clean';
 import { ChapterOne } from './chapter-one';
 import { ChapterTwo } from './chapter-two';
@@ -17,6 +18,7 @@ import { COMPLETE_ACTIVITY_TARGET, paintCompleteActivity } from './components/co
 /** Register every view here. Instances are created once and reused, so they keep state. */
 const FACTORIES: Record<Exclude<ViewId, 'activities'>, (hero: Hero) => ScreenView> = {
   'chapter-genesis': (hero) => new ChapterGenesis(hero),
+  'chapter-baby-delivery': () => new ChapterBabyDelivery(),
   'chapter-mouth-clean': () => new ChapterMouthClean(),
   'chapter-1': () => new ChapterOne(),
   'chapter-2': () => new ChapterTwo(),
@@ -104,11 +106,18 @@ export class ScreenRouter implements ViewNav {
 
   private completeActivity(): void {
     if (!this.completionAvailable) return;
-    if (this.top.completionNavigation === 'next-age') {
+    this.recordCompletion();
+    // Only move on to the next age once every activity of the current one is done.
+    if (this.top.completionNavigation === 'next-age' && this.currentAgeFinished()) {
       this.nextAgeActivities();
     } else {
       this.activityMenu();
     }
+  }
+
+  private currentAgeFinished(): boolean {
+    const range = AGE_RANGES.find((entry) => entry.activities.some((item) => item.view === this.current));
+    return !range || range.activities.every((item) => this.progress.has(range.id, item.id));
   }
 
   go(id: ViewId): void {

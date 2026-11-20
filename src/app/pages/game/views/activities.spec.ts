@@ -4,6 +4,7 @@ import { ActivitiesView } from './activities';
 import { ChapterTidyBed } from './chapter-tidy-bed';
 import { ChapterGenesis } from './chapter-genesis';
 import { ChapterMouthClean } from './chapter-mouth-clean';
+import { ChapterBabyDelivery } from './chapter-baby-delivery';
 import { FINANCE_LEVELS, FITNESS_LEVELS, GENESIS_BOY_NAMES, LUCK_LEVELS, PERSONALITY_TYPES, SOCIAL_SKILL_LEVELS } from '../hero';
 import { ScreenRouter } from './router';
 import { HitRegistry, ViewFrame } from './view';
@@ -117,9 +118,9 @@ describe('Activity menu and progress', () => {
     expect(frame.hit.find(38, 44)).toBe('age:0');
     const ageOne = frame.hit.find(195, 44);
     expect(ageOne).toBe('age:1');
-    expect(frame.hit.find(300, 234)).toBe('activity:0');
-    expect(frame.hit.find(150, 234)).toBeNull();
-    expect(frame.hit.find(450, 234)).toBeNull();
+    expect(frame.hit.find(150, 234)).toBe('activity:0');
+    expect(frame.hit.find(300, 234)).toBeNull();
+    expect(frame.hit.find(450, 234)).withContext('Baby delivery is locked until Genesis').toBeNull();
     expect(frame.hit.find(300, 90)).toBeNull();
     expect(frame.hit.find(300, 380)).toBeNull();
     const nav = jasmine.createSpyObj('nav', ['push']);
@@ -137,6 +138,7 @@ describe('Activity menu and progress', () => {
     expect(frame.hit.find(450, 234)).toBeNull();
 
     progress.complete('age-0', 'genesis');
+    progress.complete('age-0', 'baby-delivery');
     menu.press('activity:1', nav);
     expect(nav.push.calls.count()).toBe(2);
     menu.press('activity:0', nav);
@@ -151,6 +153,7 @@ describe('Activity menu and progress', () => {
 
   it('saves only completed chapters and returns to the menu through close', () => {
     new ActivityProgress().complete('age-0', 'genesis');
+    new ActivityProgress().complete('age-0', 'baby-delivery');
     spyOn(ChapterTidyBed.prototype, 'enter');
     spyOn(ChapterTidyBed.prototype, 'update');
     const completed = spyOnProperty(ChapterTidyBed.prototype, 'completed', 'get').and.returnValue(false);
@@ -173,6 +176,7 @@ describe('Activity menu and progress', () => {
   });
 
   it('blocks navigation until Genesis completes and preserves the unlock after reloading', () => {
+    new ActivityProgress().complete('age-0', 'baby-delivery');
     const completed = spyOnProperty(ChapterGenesis.prototype, 'completed', 'get').and.returnValue(false);
     const router = new ScreenRouter();
     router.push('chapter-tidy-bed');
@@ -197,14 +201,18 @@ describe('Activity menu and progress', () => {
     progress.complete('age-0-1', 'tidy-bed');
     expect(progress.isUnlocked('chapter-mouth-clean')).toBeFalse();
     progress.complete('age-0', 'genesis');
+    expect(progress.isUnlocked('chapter-baby-delivery')).toBeTrue();
+    expect(progress.isUnlocked('chapter-mouth-clean')).toBeFalse();
+    progress.complete('age-0', 'baby-delivery');
     expect(progress.isUnlocked('chapter-mouth-clean')).toBeTrue();
     progress.reset();
     expect(progress.isUnlocked('chapter-genesis')).toBeTrue();
     expect(progress.isUnlocked('chapter-tidy-bed')).toBeFalse();
   });
 
-  it('continues from the completed summary to the next age activities with Enter', () => {
+  it('continues from the completed summary to the rest of its age with Enter', () => {
     spyOn(window, 'matchMedia').and.returnValue({ matches: false } as MediaQueryList);
+    spyOn(ChapterBabyDelivery.prototype, 'enter');
     const now = spyOn(performance, 'now').and.returnValue(0);
     const router = new ScreenRouter();
     router.hero.name = 'Andrei';
@@ -224,8 +232,26 @@ describe('Activity menu and progress', () => {
     const text = spyOn(ctx, 'fillText');
     router.paint({ ctx, width: 600, height: 400 } as Parameters<ScreenRouter['paint']>[0]);
     const labels = text.calls.allArgs().map(args => args[0]);
-    expect(labels).toContain('Tidy bed');
-    expect(labels).not.toContain('Genesis');
+    expect(labels).toContain('Baby delivery');
+    expect(labels).toContain('Genesis');
+    expect(labels).not.toContain('Tidy bed');
+    router.key('enter');
+    expect(router.current).toBe('chapter-baby-delivery');
+    router.dispose();
+  });
+
+  it('moves on to the next age once Baby delivery finishes age 0', () => {
+    new ActivityProgress().complete('age-0', 'genesis');
+    spyOn(ChapterBabyDelivery.prototype, 'enter');
+    spyOn(ChapterBabyDelivery.prototype, 'update');
+    spyOnProperty(ChapterBabyDelivery.prototype, 'completed', 'get').and.returnValue(true);
+    const router = new ScreenRouter('chapter-baby-delivery');
+    expect(router.current).toBe('chapter-baby-delivery');
+    router.update(16);
+    expect(new ActivityProgress().has('age-0', 'baby-delivery')).toBeTrue();
+    router.key('enter');
+    expect(router.current).toBe('activities');
+    expect(router.activityMenuAge).toBe(1);
     router.key('enter');
     expect(router.current).toBe('chapter-tidy-bed');
     router.dispose();
@@ -233,6 +259,7 @@ describe('Activity menu and progress', () => {
 
   it('returns from a finished Tidy Bed to its age menu and unlocks Mouth Clean with Enter', () => {
     new ActivityProgress().complete('age-0', 'genesis');
+    new ActivityProgress().complete('age-0', 'baby-delivery');
     const router = new ScreenRouter('chapter-tidy-bed');
     router.key('enter');
     expect(router.current).toBe('chapter-tidy-bed');
@@ -254,6 +281,7 @@ describe('Activity menu and progress', () => {
 
   it('generates a complete hero and opens its story immediately from the dev shortcut', () => {
     spyOn(performance, 'now').and.returnValue(0);
+    spyOn(ChapterBabyDelivery.prototype, 'enter');
     const random = spyOn(Math, 'random').and.returnValue(0);
     const router = new ScreenRouter();
     router.generateHeroSummary();
@@ -275,12 +303,13 @@ describe('Activity menu and progress', () => {
     router.key('enter');
     expect(router.current).toBe('activities');
     router.key('enter');
-    expect(router.current).toBe('chapter-tidy-bed');
+    expect(router.current).toBe('chapter-baby-delivery');
     router.dispose();
   });
 
   it('uses the shared Enter icon for completed activities that handle their own touches', () => {
     new ActivityProgress().complete('age-0', 'genesis');
+    new ActivityProgress().complete('age-0', 'baby-delivery');
     const tidyComplete = spyOnProperty(ChapterTidyBed.prototype, 'completed', 'get').and.returnValue(false);
     const tidyPointer = spyOn(ChapterTidyBed.prototype, 'pointer').and.returnValue(true);
     spyOn(ChapterMouthClean.prototype, 'enter');

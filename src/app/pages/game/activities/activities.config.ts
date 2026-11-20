@@ -77,6 +77,13 @@ export const AGE_RANGES: readonly AgeRange[] = [
         icon: 'assets/activities/genesis/icon.png',
         color: '#f6a45d',
       },
+      {
+        id: 'baby-delivery',
+        label: 'Baby delivery',
+        view: 'chapter-baby-delivery',
+        icon: 'assets/activities/baby-delivery/icon.png',
+        color: '#b9a7e8',
+      },
     ],
   },
   {
