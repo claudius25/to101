@@ -20,7 +20,7 @@
   overflow: hidden;
 }
 
-/* Wide desktop windows: letterbox the game into a phone-shaped portrait frame. */
+/* Wide play areas: letterbox the game into a phone-shaped portrait frame. */
 @media (min-width: 640px) and (min-aspect-ratio: 3 / 4) {
   .app-shell {
     width: auto;
@@ -33,7 +33,7 @@
   }
 }
 
-.rotate-device {
+.device-notice {
   display: none;
   position: fixed;
   inset: 0;
@@ -58,13 +58,13 @@
   animation: rotate-hint 2.4s ease-in-out infinite;
 }
 
-.rotate-device__title {
+.device-notice__title {
   margin: 0;
   font-size: 1.35rem;
   font-weight: 600;
 }
 
-.rotate-device__text {
+.device-notice__text {
   margin: 0;
   color: var(--app-muted);
   font-size: 0.95rem;
@@ -78,6 +78,17 @@
   }
 
   .rotate-device {
+    display: flex;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .app-frame,
+  .rotate-device {
+    display: none;
+  }
+
+  .switch-device {
     display: flex;
   }
 }
