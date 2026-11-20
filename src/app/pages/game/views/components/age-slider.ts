@@ -6,8 +6,9 @@ export const AGE_SLIDER_STYLE = {
   sidePadding: 30,
   markerY: 10,
   markerDiameter: 4.2,
+  trackThickness: 1,
   markerColor: '#808080',
-  unavailableMarkerColor: '#808080',
+  unavailableMarkerColor: '#626262',
   activeMarkerColor: '#f6a45d',
   hitHeight: 22,
   durationMs: 300,
@@ -16,7 +17,7 @@ export const AGE_SLIDER_STYLE = {
 
 export interface AgeSliderStop {
   age: number;
-  enabled: boolean;
+  enabled(): boolean;
 }
 
 export class AgeSlider {
@@ -39,7 +40,7 @@ export class AgeSlider {
   }
 
   select(age: number): boolean {
-    const nextIndex = this.stops.findIndex((stop) => stop.age === age && stop.enabled);
+    const nextIndex = this.stops.findIndex((stop) => stop.age === age && stop.enabled());
     if (nextIndex < 0 || nextIndex === this.selectedIndex) return false;
 
     [this.fromLeft, this.fromRight] = this.markerEdges();
@@ -70,14 +71,18 @@ export class AgeSlider {
     const markerY = unit * style.markerY;
 
     ctx.save();
+    const trackHeight = unit * style.trackThickness;
+    ctx.fillStyle = style.markerColor;
+    ctx.fillRect(start, markerY - trackHeight / 2, spacing * (this.stops.length - 1), trackHeight);
     this.stops.forEach(({ age, enabled }, index) => {
       const x = start + index * spacing;
-      ctx.fillStyle = enabled ? style.markerColor : style.unavailableMarkerColor;
+      const available = enabled();
+      ctx.fillStyle = available ? style.markerColor : style.unavailableMarkerColor;
       ctx.beginPath();
       ctx.arc(x, markerY, radius, 0, Math.PI * 2);
       ctx.fill();
 
-      if (enabled) {
+      if (available) {
         const left = index === 0 ? 0 : x - spacing / 2;
         const right = index === this.stops.length - 1 ? width : x + spacing / 2;
         hit.add(`age:${age}`, left, 0, right - left, unit * style.hitHeight);
@@ -87,6 +92,7 @@ export class AgeSlider {
     if (this.selectedIndex >= 0) {
       const [left, right] = this.markerEdges();
       ctx.fillStyle = style.activeMarkerColor;
+      ctx.fillRect(start, markerY - trackHeight / 2, ((left + right) / 2) * spacing, trackHeight);
       roundedRect(
         ctx,
         start + left * spacing - radius,

@@ -49,14 +49,15 @@ export const ACTIVITIES_CONFIG = {
   } satisfies ActivityTitleConfig,
   /** Dimensions are percentages of the screen height, except iconScale (0–1). */
   layout: {
-    /** Maximum side length of a square activity button. */
-    tileSize: 46,
+    /** Height of each activity row. */
+    rowHeight: 18,
     /** Space between activity buttons. */
-    gap: 5,
-    /** Minimum padding on each side of the grid. */
+    gap: 4,
+    /** Minimum padding on each side of the list. */
     sidePadding: 7,
-    /** Distance from the top of the screen to the grid. */
-    topPadding: 5,
+    /** Distance from the top of the screen to the list. */
+    topPadding: 23,
+    bottomPadding: 7,
     /** Share of the button occupied by its icon. Smaller values add padding. */
     iconScale: 1,
     borderWidth: 0.35,

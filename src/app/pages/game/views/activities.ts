@@ -2,23 +2,33 @@ import { ACTIVITIES_CONFIG, AGE_RANGES } from '../activities/activities.config';
 import { ageRange } from '../activities/age-range';
 import { ActivityProgress } from '../activities/activity-progress';
 import { AgeSlider } from './components/age-slider';
-import { ScreenView, ViewFrame, ViewNav } from './view';
+import { ScreenView, ViewFrame, ViewNav, ViewPointer } from './view';
 import { font, roundedRect } from './ui';
 
-const PAGE_SIZE = 6;
+const layout = ACTIVITIES_CONFIG.layout;
+const viewportHeight = 100 - layout.topPadding - layout.bottomPadding;
+const rowStride = layout.rowHeight + layout.gap;
 
 export class ActivitiesView implements ScreenView {
   readonly id = 'activities' as const;
   private range = ageRange(ACTIVITIES_CONFIG.ageMonths);
   private age = Math.floor(ACTIVITIES_CONFIG.ageMonths / 12);
   private readonly ageSlider = new AgeSlider(
-    Array.from({ length: 6 }, (_, age) => ({ age, enabled: !!ageRange(age * 12) })),
+    Array.from({ length: 6 }, (_, age) => {
+      const range = ageRange(age * 12);
+      return { age, enabled: () => !!range && this.progress.isAgeUnlocked(range) };
+    }),
     this.age,
   );
   private readonly icons = new Map<string, HTMLImageElement>();
   private focus = 0;
+  private scroll = 0;
+  private unit = 0;
+  private drag?: { id: number; y: number; scroll: number; moved: boolean };
 
-  constructor(private readonly progress: ActivityProgress) {}
+  constructor(private readonly progress: ActivityProgress) {
+    this.selectAge(ACTIVITIES_CONFIG.ageMonths);
+  }
 
   get selectedAge(): number {
     return this.age;
@@ -26,15 +36,15 @@ export class ActivitiesView implements ScreenView {
 
   selectAge(ageMonths: number): void {
     const range = ageRange(ageMonths);
-    if (!range) return;
+    if (!range || !this.progress.isAgeUnlocked(range)) return;
     this.age = Math.floor(ageMonths / 12);
     this.ageSlider.select(this.age);
     this.range = range;
     // Land on the first activity that is open and not done yet, so Enter carries on from there.
-    const next = range.activities.findIndex(
-      (activity) => this.progress.isUnlocked(activity.view) && !this.progress.has(range.id, activity.id),
-    );
+    const next = range.activities.findIndex((activity) => this.progress.canStart(activity.view));
     this.focus = Math.max(0, next);
+    this.scroll = 0;
+    this.revealFocus();
   }
 
   get animated(): boolean {
@@ -60,62 +70,64 @@ export class ActivitiesView implements ScreenView {
     ctx.fillRect(0, 0, width, height);
     this.ageSlider.paint(frame);
     const activities = this.range?.activities ?? [];
-    const page = Math.floor(this.focus / PAGE_SIZE);
-    const layout = ACTIVITIES_CONFIG.layout;
-    const pageActivities = activities.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-    const gap = unit * layout.gap;
-    const rows = Math.max(1, Math.ceil(pageActivities.length / 2));
-    const footer = unit * (activities.length > PAGE_SIZE ? 12 : 7);
-    const contentTop = unit * layout.topPadding;
-    const contentHeight = height - contentTop - footer;
-    const rowGaps = gap * (rows - 1);
-    const cardWidth = (width - unit * layout.sidePadding * 2 - gap) / 2;
-    const cardHeight = Math.min(unit * layout.tileSize, (contentHeight - rowGaps) / rows);
-    const gridY = contentTop + (contentHeight - rows * cardHeight - rowGaps) / 2;
-    const gridX = activities.length === 1 ? (width - cardWidth) / 2 : unit * layout.sidePadding;
+    this.unit = unit;
+    const top = unit * layout.topPadding;
+    const bottom = height - unit * layout.bottomPadding;
+    const x = unit * layout.sidePadding;
+    const maxScroll = this.maxScroll;
+    const barWidth = unit * 1.3;
+    const cardWidth = width - 2 * x - (maxScroll > 0 ? barWidth + unit * 1.5 : 0);
+    const cardHeight = unit * layout.rowHeight;
 
-    pageActivities.forEach((activity, slot) => {
-      const index = page * PAGE_SIZE + slot;
-      const x = gridX + (slot % 2) * (cardWidth + gap);
-      const y = gridY + Math.floor(slot / 2) * (cardHeight + gap);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, top, width, bottom - top);
+    ctx.clip();
+    activities.forEach((activity, index) => {
+      const y = top + unit * (index * rowStride - this.scroll);
+      const visibleTop = Math.max(y, top);
+      const visibleBottom = Math.min(y + cardHeight, bottom);
+      if (visibleBottom <= visibleTop) return;
       const done = this.progress.has(this.range!.id, activity.id);
       const unlocked = this.progress.isUnlocked(activity.view);
       const target = `activity:${index}`;
       const focused = index === this.focus;
-      const pressed = unlocked && frame.pressed === target;
+      const playable = unlocked && !done;
+      const pressed = playable && frame.pressed === target;
       const radius = unit * 2.2;
-      const labelHeight = Math.min(unit * 10, cardHeight * 0.28);
-      const imageHeight = cardHeight - labelHeight;
-      const inset = unit * 2;
+      const inset = unit * 1.6;
+      const iconSize = cardHeight - inset * 2;
+      const iconX = x + inset;
+      const iconY = y + inset;
+      const centerY = y + cardHeight / 2;
+      const labelX = iconX + iconSize + unit * 3.5;
 
       ctx.save();
       ctx.globalAlpha = unlocked ? 1 : 0.4;
       roundedRect(ctx, x, y, cardWidth, cardHeight, radius);
       ctx.fillStyle = pressed ? '#34312c' : '#1c2227';
       ctx.fill();
+
       ctx.save();
+      roundedRect(ctx, iconX, iconY, iconSize, iconSize, radius);
       ctx.clip();
       ctx.fillStyle = done ? activity.color : '#d5d3cc';
-      ctx.fillRect(x, y, cardWidth, imageHeight);
+      ctx.fillRect(iconX, iconY, iconSize, iconSize);
 
       const image = this.icons.get(activity.icon);
       if (image?.complete && image.naturalWidth > 0) {
         const scale =
-          Math.min(
-            (cardWidth - inset * 2) / image.naturalWidth,
-            (imageHeight - inset * 2) / image.naturalHeight,
-          ) * layout.iconScale;
+          (iconSize / Math.max(image.naturalWidth, image.naturalHeight)) * layout.iconScale;
         const iconWidth = image.naturalWidth * scale;
         const iconHeight = image.naturalHeight * scale;
         ctx.filter = done ? 'none' : 'grayscale(1)';
         ctx.drawImage(
           image,
-          x + (cardWidth - iconWidth) / 2,
-          y + (imageHeight - iconHeight) / 2,
+          iconX + (iconSize - iconWidth) / 2,
+          iconY + (iconSize - iconHeight) / 2,
           iconWidth,
           iconHeight,
         );
-        ctx.filter = 'none';
       }
       ctx.restore();
 
@@ -123,20 +135,20 @@ export class ActivitiesView implements ScreenView {
       ctx.strokeStyle = focused || pressed ? '#f6a45d' : '#465057';
       ctx.lineWidth = unit * layout.borderWidth * (focused || pressed ? 2 : 1);
       ctx.stroke();
-      ctx.fillStyle = focused ? '#ffd2a9' : '#f4f3eb';
-      ctx.font = font(frame, Math.min(4.4, (labelHeight / unit) * 0.44), 600);
+      ctx.fillStyle = '#f4f3eb';
+      ctx.font = font(frame, 5.5, 600);
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillText(
         activity.label,
-        x + unit * 3,
-        y + imageHeight + labelHeight / 2,
-        cardWidth - unit * (done || !unlocked ? 12 : 6),
+        labelX,
+        centerY,
+        x + cardWidth - labelX - unit * (done || !unlocked ? 12 : 3),
       );
 
-      if (!unlocked) {
+      if (!unlocked && !done) {
         const lockX = x + cardWidth - unit * 7;
-        const lockY = y + imageHeight + labelHeight / 2;
+        const lockY = centerY;
         ctx.globalAlpha = 1;
         ctx.strokeStyle = '#c2c7cc';
         ctx.lineWidth = unit * 0.6;
@@ -147,30 +159,76 @@ export class ActivitiesView implements ScreenView {
         ctx.stroke();
       } else if (done) {
         ctx.beginPath();
-        ctx.moveTo(x + cardWidth - unit * 8, y + imageHeight + labelHeight / 2);
-        ctx.lineTo(x + cardWidth - unit * 6, y + imageHeight + labelHeight / 2 + unit * 2);
-        ctx.lineTo(x + cardWidth - unit * 3, y + imageHeight + labelHeight / 2 - unit * 2);
+        ctx.moveTo(x + cardWidth - unit * 8, centerY);
+        ctx.lineTo(x + cardWidth - unit * 6, centerY + unit * 2);
+        ctx.lineTo(x + cardWidth - unit * 3, centerY - unit * 2);
         ctx.strokeStyle = '#a6d8b8';
         ctx.lineWidth = unit * 0.8;
         ctx.stroke();
       }
       ctx.restore();
-      if (unlocked) hit.add(target, x, y, cardWidth, cardHeight);
+      if (playable) hit.add(target, x, visibleTop, cardWidth, visibleBottom - visibleTop);
     });
-    if (activities.length > PAGE_SIZE) {
-      ctx.fillStyle = '#f4f3eb';
-      ctx.font = font(frame, 4.5);
-      ctx.textAlign = 'center';
-      ctx.fillText(
-        `${page + 1} / ${Math.ceil(activities.length / PAGE_SIZE)}`,
-        width / 2,
-        unit * 96,
-      );
-      hit.add('previous', 0, unit * 91, width / 2, unit * 9);
-      hit.add('next', width / 2, unit * 91, width / 2, unit * 9);
-      ctx.fillText('‹', unit * 8, unit * 96);
-      ctx.fillText('›', width - unit * 8, unit * 96);
+    ctx.restore();
+
+    if (maxScroll > 0) {
+      const trackHeight = bottom - top;
+      const thumbHeight = Math.max(unit * 5, trackHeight ** 2 / (trackHeight + maxScroll * unit));
+      const thumbY = top + (trackHeight - thumbHeight) * (this.scroll / maxScroll);
+      const barX = width - x - barWidth;
+      roundedRect(ctx, barX, top, barWidth, trackHeight, barWidth / 2);
+      ctx.fillStyle = '#31363a';
+      ctx.fill();
+      roundedRect(ctx, barX, thumbY, barWidth, thumbHeight, barWidth / 2);
+      ctx.fillStyle = '#797e82';
+      ctx.fill();
     }
+  }
+
+  private get maxScroll(): number {
+    const count = this.range?.activities.length ?? 0;
+    return Math.max(0, count * rowStride - layout.gap - viewportHeight);
+  }
+
+  private revealFocus(): void {
+    const top = this.focus * rowStride;
+    const bottom = top + layout.rowHeight;
+    this.scroll = Math.max(
+      0,
+      Math.min(top, this.maxScroll, Math.max(this.scroll, bottom - viewportHeight)),
+    );
+  }
+
+  pointer({ id, phase, y }: ViewPointer): boolean {
+    if (phase === 'down') {
+      if (
+        !this.drag &&
+        this.unit > 0 &&
+        this.maxScroll > 0 &&
+        y >= this.unit * layout.topPadding &&
+        y <= this.unit * (100 - layout.bottomPadding)
+      ) {
+        this.drag = { id, y, scroll: this.scroll, moved: false };
+      }
+      return false;
+    }
+
+    const drag = this.drag;
+    if (!drag || drag.id !== id) return false;
+    if (phase !== 'move') {
+      this.drag = undefined;
+      return drag.moved;
+    }
+    const distance = (drag.y - y) / this.unit;
+    if (!drag.moved && Math.abs(distance) < 1) return false;
+
+    drag.moved = true;
+    this.scroll = Math.max(0, Math.min(this.maxScroll, drag.scroll + distance));
+    return true;
+  }
+
+  suspend(): void {
+    this.drag = undefined;
   }
 
   press(target: string, nav: ViewNav): void {
@@ -184,15 +242,9 @@ export class ActivitiesView implements ScreenView {
     }
     const activities = this.range?.activities ?? [];
     if (!activities.length) return;
-    if (target === 'previous' || target === 'next') {
-      const pages = Math.ceil(activities.length / PAGE_SIZE);
-      const page = Math.floor(this.focus / PAGE_SIZE);
-      this.focus = ((page + (target === 'next' ? 1 : -1) + pages) % pages) * PAGE_SIZE;
-      return;
-    }
     const index = Number(target.replace('activity:', ''));
     const activity = activities[index];
-    if (!activity || !this.progress.isUnlocked(activity.view)) return;
+    if (!activity || !this.progress.canStart(activity.view)) return;
     this.focus = index;
     nav.push(activity.view);
   }
@@ -204,9 +256,10 @@ export class ActivitiesView implements ScreenView {
       this.press(`activity:${this.focus}`, nav);
       return true;
     }
-    const movement: Record<string, number> = { left: -1, right: 1, up: -2, down: 2 };
+    const movement: Record<string, number> = { left: -1, right: 1, up: -1, down: 1 };
     if (!(key in movement)) return false;
     this.focus = (this.focus + movement[key] + count) % count;
+    this.revealFocus();
     return true;
   }
 }

@@ -20,13 +20,25 @@ export class ActivityProgress {
     return this.completed.has(`${rangeId}/${activityId}`);
   }
 
-  isUnlocked(view: ViewId): boolean {
-    const sequence = AGE_RANGES.flatMap(range =>
-      range.activities.map(activity => ({ rangeId: range.id, activity })),
+  isAgeUnlocked(range: AgeRange): boolean {
+    const index = AGE_RANGES.indexOf(range);
+    return index >= 0 && AGE_RANGES.slice(0, index).every((earlier) =>
+      earlier.activities.every((activity) => this.has(earlier.id, activity.id)),
     );
-    const index = sequence.findIndex(entry => entry.activity.view === view);
-    return index <= 0 || sequence.slice(0, index).every(entry =>
-      this.has(entry.rangeId, entry.activity.id),
+  }
+
+  canStart(view: ViewId): boolean {
+    const range = AGE_RANGES.find((entry) => entry.activities.some((item) => item.view === view));
+    const activity = range?.activities.find((item) => item.view === view);
+    return !(range && activity && this.has(range.id, activity.id)) && this.isUnlocked(view);
+  }
+
+  isUnlocked(view: ViewId): boolean {
+    const range = AGE_RANGES.find((entry) => entry.activities.some((item) => item.view === view));
+    if (!range) return true;
+    const index = range.activities.findIndex((activity) => activity.view === view);
+    return this.isAgeUnlocked(range) && range.activities.slice(0, index).every(
+      (activity) => this.has(range.id, activity.id),
     );
   }
 
@@ -49,6 +61,6 @@ export class ActivityProgress {
     }
   }
 }
-import { AGE_RANGES } from './activities.config';
+import { AGE_RANGES, type AgeRange } from './activities.config';
 import type { ViewId } from '../views/view';
 

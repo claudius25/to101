@@ -59,7 +59,7 @@ export class ScreenRouter implements ViewNav {
   readonly hero = new Hero();
 
   constructor(initial: ViewId = 'activities') {
-    this.open(this.progress.isUnlocked(initial) ? initial : 'activities');
+    this.open(this.progress.canStart(initial) ? initial : 'activities');
   }
 
   dispose(): void {
@@ -122,7 +122,7 @@ export class ScreenRouter implements ViewNav {
 
   go(id: ViewId): void {
     this.recordCompletion();
-    if (!this.progress.isUnlocked(id)) return;
+    if (!this.progress.canStart(id)) return;
     this.clearStack();
     this.open(id);
   }
@@ -157,15 +157,16 @@ export class ScreenRouter implements ViewNav {
     const index = AGE_RANGES.findIndex(range =>
       range.activities.some(activity => activity.view === this.current),
     );
-    const range = AGE_RANGES[index + ageOffset];
     this.go('activities');
+    const nextRange = AGE_RANGES[index + ageOffset];
+    const range = nextRange && this.progress.isAgeUnlocked(nextRange) ? nextRange : AGE_RANGES[index];
     if (range) (this.top as ActivitiesView).selectAge(range.minAgeMonths);
     this.invalidate();
   }
 
   push(id: ViewId): void {
     this.recordCompletion();
-    if (!this.progress.isUnlocked(id)) return;
+    if (!this.progress.canStart(id)) return;
     if (this.stack.some((view) => view.id === id)) {
       return;
     }
@@ -272,6 +273,8 @@ export class ScreenRouter implements ViewNav {
 
     // A view that handles its own touches (a game, say) takes the whole stream.
     if (!this.completionAvailable && this.top.pointer?.({ id, phase, x, y })) {
+      this.pressed = null;
+      this.invalidate();
       return;
     }
 
