@@ -83,13 +83,15 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .app-frame,
-  .rotate-device {
-    display: none;
-  }
+  :host(.desktop-restricted) {
+    .app-frame,
+    .rotate-device {
+      display: none;
+    }
 
-  .switch-device {
-    display: flex;
+    .switch-device {
+      display: flex;
+    }
   }
 }
 
