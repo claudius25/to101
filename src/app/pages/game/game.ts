@@ -340,7 +340,7 @@ export class Game implements AfterViewInit, OnDestroy {
 
   /** Hands each surface to the module that draws it. */
   private bindViews(): void {
-    this.screens.setPainter('eink', (frame) => this.eink.paint(frame));
+    this.screens.setPainter('eink', (frame) => this.eink.paint(frame, this.router.activityMenuAge));
     this.screens.setPainter('glass', (frame) => this.router.paint(frame));
     this.screens.onPointer = (id, phase, pointerId, x, y) => {
       if (id === 'glass') {

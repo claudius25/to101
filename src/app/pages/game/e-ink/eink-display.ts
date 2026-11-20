@@ -9,6 +9,23 @@ const FONT_FAMILY = '"Segoe UI", system-ui, sans-serif';
 /** Alpha above which a pixel counts as part of the character art. */
 const ALPHA_THRESHOLD = 16;
 
+const MENU_ART_DIR = 'assets/e-ink/life-stages';
+
+/** Stage start ages and visible heights as fractions of the strip height. */
+const MENU_STAGES = [
+  { from: 60, art: 'age-60-100-cane-man.png', height: 0.61 },
+  { from: 40, art: 'age-40-60-older-man.png', height: 0.66 },
+  { from: 20, art: 'age-20-40-man.png', height: 0.66 },
+  { from: 15, art: 'age-10-20-adolescent.png', height: 0.61 },
+  { from: 5, art: 'age-5-10-boy.png', height: 0.48 },
+  { from: 2, art: 'age-2-5-toddler.png', height: 0.36 },
+  { from: 1, art: 'age-1-stroller.png', height: 0.34 },
+  { from: 0, art: 'age-0-crane-baby.png', height: 0.38 },
+];
+
+/** Top edge of the grass near the center of background.png, with a slight overlap. */
+const MENU_GROUND = 0.773;
+
 interface Rect {
   x: number;
   y: number;
@@ -78,8 +95,7 @@ function seconds(elapsedMs: number): string {
  * Paints the e-ink strip.
  *
  * It shows, in order of priority: the curfew card while a window is in force, the card
- * the current glass view asked for, or a plain dev status readout. Cards are the rule's
- * rich text beside a character, wrapped and fitted to the available space.
+ * the current glass view asked for, the activity menu scene, or a dev status readout.
  */
 export class EinkDisplay {
   /** Fired once the character art is decoded, so the surface can repaint. */
@@ -91,20 +107,46 @@ export class EinkDisplay {
   private imageRect: Rect | null = null;
   private source = '';
   private failed = false;
+  private menuBackground: HTMLImageElement | null = null;
 
   constructor(
     private readonly curfew: Curfew,
     private readonly config: CurfewConfig = CURFEW_CONFIG,
   ) {}
 
-  paint(frame: ScreenPaintContext): void {
+  paint(frame: ScreenPaintContext, menuAge: number | null = null): void {
     const card = this.curfew.active() ?? this.card;
     this.paintPaper(frame);
 
     if (card) {
       this.paintCard(frame, card);
+    } else if (menuAge !== null) {
+      this.paintMenu(frame, menuAge);
     } else {
       this.paintStatus(frame);
+    }
+  }
+
+  private paintMenu(frame: ScreenPaintContext, age: number): void {
+    const { ctx, width, height } = frame;
+    if (!this.menuBackground) {
+      const background = new Image();
+      background.onload = () => this.onReady?.();
+      background.src = `${MENU_ART_DIR}/background.png`;
+      this.menuBackground = background;
+    }
+
+    const stage = MENU_STAGES.find(({ from }) => age >= from);
+    if (stage) this.prepare(`${MENU_ART_DIR}/${stage.art}`);
+
+    const background = this.menuBackground;
+    if (!background.complete || !background.naturalWidth) return;
+    ctx.drawImage(background, 0, 0, width, height);
+
+    if (stage) {
+      const artHeight = height * stage.height;
+      const bottom = height * (stage.from === 0 ? 0.54 : MENU_GROUND);
+      this.paintCharacter(frame, { x: 0, y: bottom - artHeight, width, height: artHeight }, 1);
     }
   }
 
@@ -120,8 +162,7 @@ export class EinkDisplay {
   private paintCard(frame: ScreenPaintContext, card: EinkCard): void {
     const { ctx, width, height } = frame;
     const unit = height / 100;
-    const { padding, gap, characterWidth, lineHeight } =
-      this.config.layout;
+    const { padding, gap, characterWidth, lineHeight } = this.config.layout;
 
     const boxX = unit * padding;
     const boxY = unit * padding;
@@ -187,8 +228,8 @@ export class EinkDisplay {
     return !this.failed;
   }
 
-  /** Fits and centers the art in `box`, keeping its aspect ratio. */
-  private paintCharacter(frame: ScreenPaintContext, box: Rect): void {
+  /** Fits the trimmed art in the box, with vertical alignment from top (0) to bottom (1). */
+  private paintCharacter(frame: ScreenPaintContext, box: Rect, alignY = 0.5): void {
     const image = this.image;
     const rect = this.imageRect;
     if (!image || !rect) {
@@ -206,7 +247,7 @@ export class EinkDisplay {
       rect.width,
       rect.height,
       box.x + (box.width - drawWidth) / 2,
-      box.y + (box.height - drawHeight) / 2,
+      box.y + (box.height - drawHeight) * alignY,
       drawWidth,
       drawHeight,
     );

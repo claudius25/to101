@@ -70,6 +70,11 @@ export class ScreenRouter implements ViewNav {
     return this.top.id;
   }
 
+  get activityMenuAge(): number | null {
+    const view = this.top;
+    return view instanceof ActivitiesView ? view.selectedAge : null;
+  }
+
   get depth(): number {
     return this.stack.length;
   }

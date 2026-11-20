@@ -9,26 +9,26 @@ const PAGE_SIZE = 6;
 
 export class ActivitiesView implements ScreenView {
   readonly id = 'activities' as const;
-  readonly briefing = {
-    text: '',
-    fontSize: 15,
-    character: null,
-  };
-
   private range = ageRange(ACTIVITIES_CONFIG.ageMonths);
+  private age = Math.floor(ACTIVITIES_CONFIG.ageMonths / 12);
   private readonly ageSlider = new AgeSlider(
     Array.from({ length: 6 }, (_, age) => ({ age, enabled: !!ageRange(age * 12) })),
-    Math.floor(ACTIVITIES_CONFIG.ageMonths / 12),
+    this.age,
   );
   private readonly icons = new Map<string, HTMLImageElement>();
   private focus = 0;
 
   constructor(private readonly progress: ActivityProgress) {}
 
+  get selectedAge(): number {
+    return this.age;
+  }
+
   selectAge(ageMonths: number): void {
     const range = ageRange(ageMonths);
     if (!range) return;
-    this.ageSlider.select(Math.floor(ageMonths / 12));
+    this.age = Math.floor(ageMonths / 12);
+    this.ageSlider.select(this.age);
     this.range = range;
     this.focus = 0;
   }
