@@ -69,14 +69,32 @@ describe('Baby delivery runtime', () => {
 });
 
 describe('Baby delivery chapter', () => {
-  it('starts a run from its menu card with Enter and claims the steering keys', async () => {
+  it('advances through seven panels with Enter before handling the flight controls', async () => {
     const chapter = new ChapterBabyDelivery();
     chapter.enter();
-    const runtime = (chapter as unknown as { runtime: BabyDeliveryRuntime }).runtime;
+    const { runtime, storyboard } = chapter as unknown as {
+      runtime: BabyDeliveryRuntime;
+      storyboard: { panels: HTMLImageElement[] };
+    };
+    expect(storyboard.panels.length).toBe(7);
+    await Promise.all(storyboard.panels.map((panel) => panel.decode()));
     await loaded(runtime);
     chapter.update(16);
 
     const frame = portraitFrame();
+    const drawImage = spyOn(frame.ctx, 'drawImage').and.callThrough();
+    expect(chapter.key('right')).toBeFalse();
+    for (const panel of storyboard.panels) {
+      frame.hit.reset();
+      chapter.paint(frame);
+      expect(drawImage.calls.mostRecent().args).toEqual([panel, -140, 0, 640, 640]);
+      const nextTarget = frame.hit.find(320, 608);
+      expect(nextTarget).toBe('storyboard:next');
+      if (panel === storyboard.panels[0]) chapter.press(nextTarget!);
+      else expect(chapter.key('enter')).toBeTrue();
+      expect(runtime.status().phase).toBe('menu');
+    }
+    frame.hit.reset();
     chapter.paint(frame);
     let startTarget: string | null = null;
     for (let y = 0; y < 640 && !startTarget; y += 4) {

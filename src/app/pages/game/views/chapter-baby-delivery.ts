@@ -8,6 +8,17 @@ import {
 import { ScreenView, ViewFrame, ViewPointer } from './view';
 import { font, roundedRect, wrap } from './ui';
 import { QuickInstruction } from './components/quick-instruction';
+import { Storyboard } from './components/storyboard';
+
+const BEFORE_STORY = [
+  '01-birthday-wish.png',
+  '02-one-more-delivery.png',
+  '03-the-stare.png',
+  '04-boss-close-up.png',
+  '05-reluctant-yes.png',
+  '06-baby-handoff.png',
+  '07-takeoff.png',
+].map((panel) => `assets/baby-delivery/before-storyboard/${panel}`);
 
 const INTRO_QUOTES = [
   'Special delivery! Handle with care.',
@@ -51,6 +62,7 @@ export class ChapterBabyDelivery implements ScreenView {
   private delivered = false;
   private error = '';
   private selection = 0;
+  private readonly storyboard = new Storyboard(BEFORE_STORY, 'Continue to game');
   private touch: { id: number; x0: number; y0: number } | null = null;
   private readonly instruction = new QuickInstruction(
     'Arrows steer, Enter pauses. Fly smoothly to keep the baby asleep.',
@@ -65,6 +77,7 @@ export class ChapterBabyDelivery implements ScreenView {
     this.selection = 0;
     this.touch = null;
     this.instruction.reset();
+    this.storyboard.reset();
     const quote = INTRO_QUOTES[Math.floor(Math.random() * INTRO_QUOTES.length)];
     this.briefing.text = `**${quote}**`;
     if (this.runtime || this.error) {
@@ -87,6 +100,7 @@ export class ChapterBabyDelivery implements ScreenView {
   // ------------------------------------------------------------------ input
 
   key(key: string): boolean {
+    if (this.storyboard.active) return this.storyboard.key(key);
     const status = this.runtime?.status();
     if (!status || status.loading || status.error) return false;
     if (status.phase === 'play') {
@@ -121,6 +135,7 @@ export class ChapterBabyDelivery implements ScreenView {
 
   /** While flying, a drag anywhere steers. Menus fall through to the router's tap handling. */
   pointer(event: ViewPointer): boolean {
+    if (this.storyboard.active) return false;
     if (this.instruction.pointer(event)) return true;
     const status = this.runtime?.status();
     if (status?.phase !== 'play' || status.paused) {
@@ -144,6 +159,10 @@ export class ChapterBabyDelivery implements ScreenView {
   }
 
   press(target: string): void {
+    if (this.storyboard.active) {
+      this.storyboard.press(target);
+      return;
+    }
     if (!target.startsWith('delivery:')) return;
     this.activate(target.slice('delivery:'.length) as CardButton);
   }
@@ -180,6 +199,7 @@ export class ChapterBabyDelivery implements ScreenView {
   private lastUnit = 1;
 
   paint(frame: ViewFrame): void {
+    if (this.storyboard.paint(frame)) return;
     const { ctx, width, height, unit } = frame;
     this.lastUnit = unit;
     ctx.fillStyle = '#bfe0f2';
