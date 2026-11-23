@@ -9,8 +9,15 @@ button { font: inherit; cursor: pointer; }
 .board-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .move-count { font-weight: 700; font-variant-numeric: tabular-nums; }
 .toolbar button { padding: 7px 12px; border: 1px solid var(--empty-tile-border); border-radius: 8px; background: var(--empty-tile); color: var(--text-light); }
-#board { touch-action: none; user-select: none; display: grid; grid-template-columns: repeat(var(--size), minmax(0, 1fr)); gap: var(--board-gap);
+#board { position: relative; touch-action: none; user-select: none; display: grid; grid-template-columns: repeat(var(--size), minmax(0, 1fr)); gap: var(--board-gap);
   padding: var(--board-padding); border-radius: var(--board-radius); background: var(--board-background); }
+#board-result:not([hidden]) {
+  position: absolute; top: 50%; left: 50%; width: 100%; height: 100%;
+  transform: translate(-50%, -50%); z-index: 4; display: grid; place-items: center;
+  border-radius: inherit; background: rgb(18 20 29 / 80%); color: var(--text-light);
+  font: var(--organ-font-weight) clamp(1.6rem, 8vw, 4rem)/1 var(--organ-font);
+  text-align: center;
+}
 .cell { position: relative; min-width: 0; aspect-ratio: 1; border-radius: var(--tile-radius); border: 1px solid transparent;
   background: var(--empty-tile); color: var(--text-dark); font-size: var(--tile-font-size);
   font-weight: var(--tile-font-weight); padding: 0; transition: filter var(--tile-transition), transform var(--tile-transition); }
@@ -30,6 +37,7 @@ button { font: inherit; cursor: pointer; }
   100% { transform: scale(.2); opacity: 0; }
 }
 .cell.empty { background: transparent; }
+.cell.destination { border: 2px dashed var(--text-muted); }
 .cell.black { color: var(--text-light); }
 .cell.partner { z-index: 1; transform: scale(var(--active-scale)); }
 .cell[aria-pressed="true"],
@@ -47,6 +55,12 @@ button { font: inherit; cursor: pointer; }
   background: var(--tile); color: var(--text-dark); font-size: var(--tile-font-size);
   font-weight: var(--tile-font-weight);
 }
+.sliding-tile {
+  position: absolute; z-index: 3; pointer-events: none;
+  display: grid; place-items: center;
+  border-radius: var(--tile-radius); background: var(--tile);
+  font-size: var(--tile-font-size); font-weight: var(--tile-font-weight);
+}
 .text-tile {
   padding: 1px;
   font-size: var(--label-font-size);
@@ -60,29 +74,26 @@ button { font: inherit; cursor: pointer; }
   position: absolute; inset: var(--family-tile-inset);
   display: grid; place-items: center;
   padding: var(--label-padding); visibility: hidden;
-}
-.care-text {
   text-wrap: balance;
 }
-.organ-art, .condition-art {
-  --art-inset: var(--family-tile-inset);
+.condition-text {
+  inset: 1%;
+  padding: 0;
+}
+.organ-art {
+  --art-inset: 1%;
   position: absolute; inset: var(--art-inset); visibility: hidden;
   width: calc(100% - 2 * var(--art-inset));
   height: calc(100% - 2 * var(--art-inset));
 }
-.condition-art { --art-inset: 8%; }
-.cell:is(:active, .partner, [aria-pressed="true"]) :is(.family-label, .organ-art, .condition-art),
-.drag-tile :is(.family-label, .organ-art, .condition-art) { visibility: visible; }
+.cell:is(:active, .partner, [aria-pressed="true"]) :is(.family-label, .organ-art),
+:is(.drag-tile, .sliding-tile) :is(.family-label, .organ-art) { visibility: visible; }
 .organ-art text,
-.condition-art text,
-.care-text {
+.family-label {
   font-family: var(--organ-font);
   font-weight: var(--organ-font-weight);
 }
-.organ-art text, .condition-art text { fill: currentColor; }
-.organ-silhouette {
-  fill: var(--organ-white); stroke: var(--text-dark); stroke-width: 1.25;
-}
+.organ-art text { fill: currentColor; }
 .drag-tile.black { color: var(--text-light); }
 button:focus-visible { outline: 2px solid var(--text-light); outline-offset: 1px; }
 #status { min-height: 3em; margin-bottom: 0; }

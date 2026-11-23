@@ -43,7 +43,7 @@ document.title = copy.title;
 document.querySelector('#game-title').textContent = copy.title;
 document.querySelector('#instructions').textContent = [
   copy.instructions,
-  rules.blackClearsGray ? copy.blackRule : '',
+  rules.blackClearsGray ? format(copy.blackRule, { cost: rules.blackGrayMoveCost }) : '',
   format(copy.goal, { groups: groupCount, limit: moveLimit }),
 ]
   .filter(Boolean)
@@ -134,6 +134,7 @@ tiles.black = { color: art.black.color, symbol: art.black.icon };
 tiles.fixed = { color: art.fixed.color, symbol: art.fixed.icon };
 
 const board = document.querySelector('#board');
+const boardResult = document.querySelector('#board-result');
 board.style.setProperty('--size', size);
 board.setAttribute('aria-label', format(copy.board, { size }));
 const score = document.querySelector('#score');
@@ -142,10 +143,13 @@ const status = document.querySelector('#status');
 const shuffle = document.querySelector('#shuffle');
 shuffle.textContent = copy.newBoard;
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+const activeSlides = new Set();
+const slideDurationMs = 180;
 let cells;
 let selected;
 let moves;
 let merged;
+let result;
 
 function adjacent(first, second) {
   return (
@@ -223,6 +227,7 @@ function shuffleInPlace(items) {
 }
 
 function newBoard() {
+  for (const finish of activeSlides) finish();
   const activeColors = chooseBoardColors();
   const deck = activeColors.flatMap((color) => Array(groupSize).fill(color));
   deck.push('black', ...Array(emptyCount).fill(null));
@@ -256,6 +261,7 @@ function newBoard() {
   selected = null;
   moves = 0;
   merged = 0;
+  result = null;
   render();
   status.textContent = copy.ready;
 }
@@ -289,7 +295,8 @@ function slideDistance(source, target) {
 }
 
 function play(index) {
-  if (merged === groupCount || moves >= moveLimit) return;
+  if (result) return;
+  const slides = [];
   if (cells[index] === 'fixed') {
     selected = null;
     status.textContent = copy.fixed;
@@ -304,6 +311,9 @@ function play(index) {
       status.textContent = copy.overBudget;
       return;
     }
+    for (const finish of activeSlides) finish();
+    const slide = prepareSlide(selected, index);
+    if (slide) slides.push(slide);
     moves += distance;
     if (tileLabels.has(selected)) {
       tileLabels.set(index, tileLabels.get(selected));
@@ -331,28 +341,50 @@ function play(index) {
       status.textContent = copy.moved;
     }
 
-    const blackIndex = cells.indexOf('black');
-    let destroyed = 0;
-    cells.forEach((tile, target) => {
-      if (!rules.blackClearsGray || tile !== 'fixed' || !adjacent(blackIndex, target)) return;
-      animateClear(target);
-      cells[target] = null;
-      destroyed++;
-    });
-    if (destroyed > 0 && merged < groupCount) {
-      const message = format(destroyed === 1 ? copy.grayOne : copy.grayMany, { count: destroyed });
-      status.textContent = matched ? copy.merged + ' ' + message : message;
+    const grayCost = rules.blackGrayMoveCost;
+    if (rules.blackClearsGray && merged < groupCount) {
+      let blackIndex = cells.indexOf('black');
+      let blackSlide = slide?.path[1] === blackIndex ? slide : null;
+      let captured = 0;
+      while (moves + grayCost <= moveLimit) {
+        const grayIndex = cells.findIndex((tile, target) => tile === 'fixed' && adjacent(blackIndex, target));
+        if (grayIndex === -1) break;
+        if (blackSlide) {
+          blackSlide.path.push(grayIndex);
+        } else {
+          blackSlide = prepareSlide(blackIndex, grayIndex);
+          if (blackSlide) slides.push(blackSlide);
+        }
+        animateClear(grayIndex, ((blackSlide?.path.length ?? 1) - 1) * slideDurationMs);
+        cells[blackIndex] = null;
+        cells[grayIndex] = 'black';
+        blackIndex = grayIndex;
+        moves += grayCost;
+        captured++;
+      }
+      if (captured) {
+        const message = format(captured === 1 ? copy.grayMoved : copy.grayChain, {
+          count: captured,
+          cost: captured * grayCost,
+        });
+        status.textContent = matched ? copy.merged + ' ' + message : message;
+      }
     }
 
-    if (merged < groupCount && moves === moveLimit) {
+    if (merged === groupCount) {
+      result = copy.winTitle;
+    } else if (moves === moveLimit) {
+      result = copy.lossTitle;
       status.textContent = format(copy.loss, { limit: moveLimit });
-    } else if (merged < groupCount && !cells.some((_, target) => canSlide(target))) {
+    } else if (!cells.some((_, target) => canSlide(target))) {
+      result = copy.lossTitle;
       status.textContent = copy.stuck;
     }
   } else {
     status.textContent = copy.invalid;
   }
   render();
+  for (const slide of slides) animateSlide(slide);
 }
 
 const buttons = Array.from({ length: size * size }, (_, index) => {
@@ -370,75 +402,92 @@ const buttons = Array.from({ length: size * size }, (_, index) => {
 const organs = families.map((family) => ({
   id: family.id,
   name: plainLabel(family.organ),
-  silhouettePath: family.art.silhouette ?? art.silhouette,
-  color: family.art.color,
-  organPath: family.art.path,
-  placement: family.art.placement,
+  image: family.art.image,
+  imageRegion: family.art.imageRegion,
   leftText: family.art.leftText,
   bottomText: family.art.bottomText,
 }));
 
 function renderOrganTile(element, organ) {
-  const step = Math.min(art.leftMaxStep, art.leftHeight / organ.leftText.length);
-  const start = (art.leftArea - step * organ.leftText.length) / 2 + step * art.leftBaseline;
+  const fontSize = Math.min(art.organMaxFont, art.leftHeight / organ.leftText.length);
+  const step = fontSize * 0.84;
+  const start = art.bottomY - step * organ.leftText.length;
   const left = [...organ.leftText]
     .map(
       (letter, index) =>
-        `<text x="${art.leftX}" y="${start + index * step}" text-anchor="middle"
-      font-size="${Math.min(art.leftMaxFont, step * art.leftFontScale)}">${letter}</text>`,
+        `<text x="${art.leftX}" y="${start + index * step}" text-anchor="middle">${letter}</text>`,
     )
     .join('');
-  const bottomSize = Math.min(art.bottomMaxFont, art.bottomFontBudget / organ.bottomText.length);
+  const bottomLength = Math.min(art.bottomWidth, fontSize * organ.bottomText.length * 0.8);
+  const imageUrl = `../../assets/triples/${organ.image}`;
+  const image = organ.imageRegion
+    ? `<svg x="55" y="2" width="193" height="205" viewBox="${organ.imageRegion}">
+        <image href="${imageUrl}" width="1536" height="1024"/>
+      </svg>`
+    : `<image href="${imageUrl}" x="55" y="2" width="193" height="205"/>`;
   element.innerHTML = `<svg class="organ-art" viewBox="${art.viewBox}" aria-hidden="true">
-    <g transform="${art.placement}">
-      <path class="organ-silhouette" d="${organ.silhouettePath}"/>
-      <path fill="${organ.color}" fill-rule="evenodd" transform="${organ.placement}" d="${organ.organPath}"/>
-    </g>
-    <g>
+    ${image}
+    <g font-size="${fontSize}">
       ${left}
-      <text x="${art.bottomX}" y="${art.bottomY}" textLength="${art.bottomWidth}" lengthAdjust="spacingAndGlyphs"
-        font-size="${bottomSize}">${organ.bottomText}</text>
+      <text x="${art.bottomX}" y="${art.bottomY}" textLength="${bottomLength}" lengthAdjust="spacingAndGlyphs">${organ.bottomText}</text>
     </g>
   </svg>`;
-}
-
-let conditionPathId = 0;
-
-function renderConditionTile(element, label) {
-  const pathId = `condition-outline-${++conditionPathId}`;
-  const text = plainLabel(label);
-  // Leave a gap at the top-left seam and give longer labels more of the outline.
-  const textLength = Math.min(790, [...text].length * 27);
-  element.innerHTML = `<svg class="condition-art" viewBox="0 0 256 256" aria-hidden="true">
-    <defs>
-      <path id="${pathId}" d="M 12,68 V 188 A 56,56 0 0 0 68,244
-        H 188 A 56,56 0 0 0 244,188 V 68 A 56,56 0 0 0 188,12
-        H 68 A 56,56 0 0 0 21,38"/>
-    </defs>
-    <text font-size="34" textLength="${textLength}" lengthAdjust="spacing"><textPath href="#${pathId}"></textPath></text>
-  </svg>`;
-  element.querySelector('textPath').textContent = text;
 }
 
 function showTileText(element, tile, index) {
   const label = tileLabels.get(index);
-  const isCondition = label?.type === labelTypes[1];
-  element.classList.toggle('text-tile', Boolean(label && !label.organ && !isCondition));
+  element.classList.toggle('text-tile', Boolean(label && !label.organ));
   element.classList.toggle('family-face', Boolean(label));
   element.style.setProperty('--family-color', label ? tile.color : '');
   element.style.color = tile?.labelColor ?? '';
   if (label?.organ) renderOrganTile(element, label.organ);
-  else if (isCondition) renderConditionTile(element, label.text);
   else if (label) {
     element.textContent = '';
     const text = document.createElement('span');
-    text.className = 'family-label care-text';
+    text.className = label.type === labelTypes[1] ? 'family-label condition-text' : 'family-label care-text';
     text.textContent = label.text;
     element.append(text);
   } else element.textContent = label?.text ?? tile?.symbol ?? '';
 }
 
-function animateClear(index) {
+function prepareSlide(source, target) {
+  if (reducedMotion.matches) return null;
+  const face = document.createElement('span');
+  face.className = 'sliding-tile';
+  face.setAttribute('aria-hidden', 'true');
+  const tile = tiles[cells[source]];
+  face.style.setProperty('--tile', tile.color);
+  showTileText(face, tile, source);
+  return { face, path: [source, target] };
+}
+
+function animateSlide({ face, path }) {
+  const source = buttons[path[0]];
+  const destination = buttons[path.at(-1)].firstElementChild;
+  face.style.left = `${source.offsetLeft}px`;
+  face.style.top = `${source.offsetTop}px`;
+  face.style.width = `${source.offsetWidth}px`;
+  face.style.height = `${source.offsetHeight}px`;
+  board.append(face);
+
+  const keyframes = path.map((index) => ({
+    transform: `translate(${buttons[index].offsetLeft - source.offsetLeft}px, ${buttons[index].offsetTop - source.offsetTop}px)`,
+    easing: 'ease-in-out',
+  }));
+  const duration = slideDurationMs * (path.length - 1);
+  const motion = face.animate(keyframes, duration);
+  const conceal = destination.animate([{ opacity: 0 }, { opacity: 0 }], duration);
+  const finish = () => {
+    motion.cancel();
+    conceal.cancel();
+    face.remove();
+    activeSlides.delete(finish);
+  };
+  activeSlides.add(finish);
+  motion.onfinish = finish;
+}
+
+function animateClear(index, delay = 0) {
   if (reducedMotion.matches) return;
   const button = buttons[index];
   const tile = tiles[cells[index]];
@@ -446,11 +495,12 @@ function animateClear(index) {
   overlay.className = 'clearing-tile';
   overlay.setAttribute('aria-hidden', 'true');
   overlay.style.setProperty('--clearing-color', tile.color);
+  overlay.style.animationDelay = `${delay}ms`;
   showTileText(overlay, tile, index);
 
   button.querySelector('.clearing-tile')?.remove();
   button.append(overlay);
-  const timeout = setTimeout(() => overlay.remove(), rules.clearAnimationTimeoutMs);
+  const timeout = setTimeout(() => overlay.remove(), delay + rules.clearAnimationTimeoutMs);
   overlay.addEventListener(
     'animationend',
     () => {
@@ -462,6 +512,8 @@ function animateClear(index) {
 }
 
 function render() {
+  boardResult.hidden = result === null;
+  boardResult.textContent = result ?? '';
   score.textContent = format(copy.score, { merged, groups: groupCount });
   moveCount.textContent = String(moves);
   const selectedTile = selected === null ? null : cells[selected];
@@ -480,12 +532,13 @@ function render() {
       index !== selected;
     button.className = 'cell';
     button.classList.toggle('empty', tile === null);
+    button.classList.toggle('destination', destination);
     button.classList.toggle('black', tile === 'black');
     button.classList.toggle('fixed', tile === 'fixed');
     button.classList.toggle('partner', partner);
     button.style.setProperty('--tile', style ? style.color : '');
     showTileText(button.firstElementChild, style, index);
-    if (tile !== null) button.querySelector('.clearing-tile')?.remove();
+    if (tile !== null && tile !== 'black') button.querySelector('.clearing-tile')?.remove();
     const label = tileLabels.get(index);
     const hideLabel = index !== selected && !partner && label;
     const description = label ? label.type + (hideLabel ? '' : ', ' + plainLabel(label.text)) : '';
@@ -516,7 +569,7 @@ board.addEventListener('pointerdown', (event) => {
   if (!event.isPrimary || event.button !== 0) return;
   suppressClick = false;
   const button = event.target.closest('.cell');
-  if (!button || merged === groupCount || moves >= moveLimit) return;
+  if (!button || result) return;
   const source = Number(button.dataset.index);
   if (cells[source] === null || cells[source] === 'fixed') return;
   drag = { pointerId: event.pointerId, source, x: event.clientX, y: event.clientY, active: false };

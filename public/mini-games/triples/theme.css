@@ -3,8 +3,6 @@
 :root {
   --page-background: #12141d;
   --board-background: #171923;
-  --organ-background: #000000;
-  --organ-white: #ffffff;
   --empty-tile: #222533;
   --empty-tile-border: #3a3d52;
   --text-light: #f8f9ff;
@@ -13,10 +11,10 @@
   --tile-radius: 12px;
   --family-tile-inset: calc(100% / 6);
   --tile-transition: 150ms ease-out;
-  --active-scale: 1.4;
+  --active-scale: 1.2;
   --page-padding: 24px 16px;
   --content-width: 760px;
-  --board-gap: clamp(20px, 5vw, 44px);
+  --board-gap: clamp(25px, 5vw, 44px);
   --board-padding: clamp(5px, 1.5vw, 10px);
   --board-radius: 16px;
   --ui-font-size: 1rem;
@@ -36,10 +34,10 @@
 @media (max-width: 600px) {
   :root {
     --tile-radius: 5px;
-    --board-gap: clamp(4px, 1.25vw, 8px);
-    --board-padding: 6px;
+    --board-gap: clamp(8px, 1.25vw, 8px);
+    --board-padding: 12px;
     --page-padding: 16px 8px;
-    --family-tile-inset: 8%;
+    --family-tile-inset: 10%;
     --label-font-size: clamp(0.5rem, 2.2vw, 0.72rem);
   }
 }
