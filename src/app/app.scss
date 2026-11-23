@@ -108,3 +108,23 @@
     transform: rotate(0deg);
   }
 }
+
+// Standalone games use the browser viewport and their own input and orientation rules.
+:host(.standalone-game) {
+  .app-frame {
+    display: block;
+    background: var(--app-bg);
+  }
+
+  .app-shell {
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .device-notice {
+    display: none;
+  }
+}

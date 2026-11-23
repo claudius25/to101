@@ -8,5 +8,15 @@ export const routes: Routes = [
     path: 'game',
     loadComponent: () => import('./pages/game/game').then((m) => m.Game),
   },
+  {
+    path: 'character-stage',
+    loadComponent: () => import('./pages/character-stage').then((m) => m.CharacterStage),
+  },
+  {
+    path: 'slide-and-match',
+    title: 'Slide & Match: Triples',
+    data: { standaloneGame: true },
+    loadComponent: () => import('./pages/triples/triples-page').then((m) => m.TriplesPage),
+  },
   { path: '**', redirectTo: '' },
 ];
