@@ -38,7 +38,7 @@ const TRIPLES_SETTINGS = {
     score: '{merged} / {groups} triples matched',
     board: '{size} by {size} game board',
     roles: ['Organ', 'Condition', 'Care option'],
-    ready: 'Choose a tile and an empty square along a clear path.',
+    ready: '',
     fixed: 'Gray tiles are fixed in place.',
     deselected: 'Tile deselected.',
     chooseEmpty: 'Choose an empty space.',

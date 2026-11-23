@@ -1,17 +1,34 @@
 'use strict';
 
-
 const { rules, copy, art, families } = TRIPLES_SETTINGS;
 const { size, moveLimit } = rules;
 const groupSize = 3;
-const groupCount = Math.min(families.length, Math.floor((size * size - 1 - rules.minimumEmptyTiles) / groupSize));
-if (!Number.isInteger(size) || groupCount < 1 || !Number.isInteger(moveLimit) || moveLimit < 1 ||
-    !Number.isInteger(rules.minimumEmptyTiles) || rules.minimumEmptyTiles < 1 ||
-    !Number.isInteger(rules.shuffleSamples) || rules.shuffleSamples < 1) {
-  throw new Error('Check the board size, family count, empty spaces, move limit, and shuffle samples in settings.js.');
+const groupCount = Math.min(
+  families.length,
+  Math.floor((size * size - 1 - rules.minimumEmptyTiles) / groupSize),
+);
+if (
+  !Number.isInteger(size) ||
+  groupCount < 1 ||
+  !Number.isInteger(moveLimit) ||
+  moveLimit < 1 ||
+  !Number.isInteger(rules.minimumEmptyTiles) ||
+  rules.minimumEmptyTiles < 1 ||
+  !Number.isInteger(rules.shuffleSamples) ||
+  rules.shuffleSamples < 1
+) {
+  throw new Error(
+    'Check the board size, family count, empty spaces, move limit, and shuffle samples in settings.js.',
+  );
 }
 const emptyCount = size * size - groupCount * groupSize - 1;
-const examples = families.map(({ organ, condition, care, source, note }) => [organ, condition, care, source, note]);
+const examples = families.map(({ organ, condition, care, source, note }) => [
+  organ,
+  condition,
+  care,
+  source,
+  note,
+]);
 const labelTypes = copy.roles;
 
 function format(text, values) {
@@ -24,18 +41,22 @@ function plainLabel(text) {
 
 document.title = copy.title;
 document.querySelector('#game-title').textContent = copy.title;
-document.querySelector('#instructions').textContent = [copy.instructions,
-  rules.blackClearsGray ? copy.blackRule : '', format(copy.goal, { groups: groupCount, limit: moveLimit })
-].filter(Boolean).join(' ');
+document.querySelector('#instructions').textContent = [
+  copy.instructions,
+  rules.blackClearsGray ? copy.blackRule : '',
+  format(copy.goal, { groups: groupCount, limit: moveLimit }),
+]
+  .filter(Boolean)
+  .join(' ');
 document.querySelector('#moves-label').textContent = copy.moveLabel;
 document.querySelector('#move-limit').textContent = String(moveLimit);
-document.querySelector('#reference-title').textContent = copy.reference;
+// document.querySelector('#reference-title').textContent = copy.reference;
 
 const reference = document.querySelector('#reference');
 for (const [organ, condition, care, url, note] of examples) {
   const item = document.createElement('li');
-  item.textContent = [organ, condition, care].map(plainLabel).join(' → ') + '. ' +
-    (note ? note + ' ' : '');
+  item.textContent =
+    [organ, condition, care].map(plainLabel).join(' → ') + '. ' + (note ? note + ' ' : '');
   const link = document.createElement('a');
   link.href = url;
   link.textContent = copy.source;
@@ -44,15 +65,18 @@ for (const [organ, condition, care, url, note] of examples) {
 }
 
 const tileLabels = new Map();
-const colors = families.map(family => family.id);
-const familyTileColors = families.map(family => family.tileColor);
+const colors = families.map((family) => family.id);
+const familyTileColors = families.map((family) => family.tileColor);
 
 function rgb(hex) {
-  return hex.slice(1).match(/../g).map(channel => parseInt(channel, 16));
+  return hex
+    .slice(1)
+    .match(/../g)
+    .map((channel) => parseInt(channel, 16));
 }
 
 function linearRgb(channels) {
-  return channels.map(channel => {
+  return channels.map((channel) => {
     const value = channel / 255;
     return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
   });
@@ -70,9 +94,9 @@ function toOklab(channels) {
   const m = Math.cbrt(0.2119034982 * red + 0.6806995451 * green + 0.1073969566 * blue);
   const s = Math.cbrt(0.0883024619 * red + 0.2817188376 * green + 0.6299787005 * blue);
   return [
-    0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
-    1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
-    0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
   ];
 }
 
@@ -90,13 +114,22 @@ function labelColor(channels) {
   return darkContrast >= lightContrast ? 'var(--text-dark)' : 'var(--text-light)';
 }
 
-const tiles = Object.fromEntries(colors.map((id, index) => {
-  const color = familyTileColors[index];
-  const channels = rgb(color);
-  return [id, {
-    color, channels, lab: toOklab(channels), labelColor: labelColor(channels), symbol: String(index + 1)
-  }];
-}));
+const tiles = Object.fromEntries(
+  colors.map((id, index) => {
+    const color = familyTileColors[index];
+    const channels = rgb(color);
+    return [
+      id,
+      {
+        color,
+        channels,
+        lab: toOklab(channels),
+        labelColor: labelColor(channels),
+        symbol: String(index + 1),
+      },
+    ];
+  }),
+);
 tiles.black = { color: art.black.color, symbol: art.black.icon };
 tiles.fixed = { color: art.fixed.color, symbol: art.fixed.icon };
 
@@ -115,8 +148,11 @@ let moves;
 let merged;
 
 function adjacent(first, second) {
-  return Math.abs(Math.floor(first / size) - Math.floor(second / size)) +
-    Math.abs(first % size - second % size) === 1;
+  return (
+    Math.abs(Math.floor(first / size) - Math.floor(second / size)) +
+      Math.abs((first % size) - (second % size)) ===
+    1
+  );
 }
 
 function connectedTiles(layout, start) {
@@ -146,7 +182,7 @@ function chooseBoardColors() {
     let best = 0;
     let bestDistance = -1;
     remaining.forEach((candidate, index) => {
-      const nearest = Math.min(...chosen.map(color => colorDistance(candidate, color)));
+      const nearest = Math.min(...chosen.map((color) => colorDistance(candidate, color)));
       if (nearest > bestDistance) {
         best = index;
         bestDistance = nearest;
@@ -166,7 +202,7 @@ function colorClustering(layout) {
       [index + size, 1],
       [column < size - 1 ? index + 1 : -1, 1],
       [column < size - 1 ? index + size + 1 : -1, rules.diagonalColorWeight],
-      [column > 0 ? index + size - 1 : -1, rules.diagonalColorWeight]
+      [column > 0 ? index + size - 1 : -1, rules.diagonalColorWeight],
     ];
     for (const [neighbor, weight] of neighbors) {
       const nearby = layout[neighbor];
@@ -188,7 +224,7 @@ function shuffleInPlace(items) {
 
 function newBoard() {
   const activeColors = chooseBoardColors();
-  const deck = activeColors.flatMap(color => Array(groupSize).fill(color));
+  const deck = activeColors.flatMap((color) => Array(groupSize).fill(color));
   deck.push('black', ...Array(emptyCount).fill(null));
   let bestBoard;
   let bestPenalty = Infinity;
@@ -202,18 +238,18 @@ function newBoard() {
       bestPenalty = penalty;
     }
   }
-  board.querySelectorAll('.clearing-tile').forEach(tile => tile.remove());
+  board.querySelectorAll('.clearing-tile').forEach((tile) => tile.remove());
   cells = bestBoard;
   tileLabels.clear();
   colors.forEach((color, index) => {
-    const positions = cells.flatMap((tile, position) => tile === color ? [position] : []);
+    const positions = cells.flatMap((tile, position) => (tile === color ? [position] : []));
     // Shuffle the labels within each color so their roles are independent of position.
     shuffleInPlace(positions);
     positions.forEach((position, role) => {
       tileLabels.set(position, {
         text: examples[index][role],
         type: labelTypes[role],
-        organ: role === 0 ? organs[index] : null
+        organ: role === 0 ? organs[index] : null,
       });
     });
   });
@@ -225,8 +261,13 @@ function newBoard() {
 }
 
 function canSlideTo(source, target) {
-  if (source === target || cells[source] === null || cells[source] === 'fixed' ||
-      cells[target] !== null) return false;
+  if (
+    source === target ||
+    cells[source] === null ||
+    cells[source] === 'fixed' ||
+    cells[target] !== null
+  )
+    return false;
   const sameRow = Math.floor(source / size) === Math.floor(target / size);
   if (!sameRow && source % size !== target % size) return false;
   const step = Math.sign(target - source) * (sameRow ? 1 : size);
@@ -241,8 +282,10 @@ function canSlide(index) {
 }
 
 function slideDistance(source, target) {
-  return Math.abs(Math.floor(source / size) - Math.floor(target / size)) +
-    Math.abs(source % size - target % size);
+  return (
+    Math.abs(Math.floor(source / size) - Math.floor(target / size)) +
+    Math.abs((source % size) - (target % size))
+  );
 }
 
 function play(index) {
@@ -253,9 +296,8 @@ function play(index) {
   } else if (cells[index] !== null) {
     const movable = canSlide(index);
     selected = selected === index ? null : index;
-    status.textContent = selected === null
-      ? copy.deselected
-      : movable ? copy.chooseEmpty : copy.blocked;
+    status.textContent =
+      selected === null ? copy.deselected : movable ? copy.chooseEmpty : copy.blocked;
   } else if (selected !== null && canSlideTo(selected, index)) {
     const distance = rules.countDistance ? slideDistance(selected, index) : 1;
     if (moves + distance > moveLimit) {
@@ -283,9 +325,8 @@ function play(index) {
       cells[index] = 'fixed';
       tileLabels.delete(index);
       merged++;
-      status.textContent = merged === groupCount
-        ? format(copy.win, { groups: groupCount })
-        : copy.merged;
+      status.textContent =
+        merged === groupCount ? format(copy.win, { groups: groupCount }) : copy.merged;
     } else {
       status.textContent = copy.moved;
     }
@@ -326,19 +367,27 @@ const buttons = Array.from({ length: size * size }, (_, index) => {
   return button;
 });
 
-const organs = families.map(family => ({
-  id: family.id, name: plainLabel(family.organ), silhouettePath: family.art.silhouette ?? art.silhouette,
-  color: family.art.color, organPath: family.art.path, placement: family.art.placement,
-  leftText: family.art.leftText, bottomText: family.art.bottomText
+const organs = families.map((family) => ({
+  id: family.id,
+  name: plainLabel(family.organ),
+  silhouettePath: family.art.silhouette ?? art.silhouette,
+  color: family.art.color,
+  organPath: family.art.path,
+  placement: family.art.placement,
+  leftText: family.art.leftText,
+  bottomText: family.art.bottomText,
 }));
 
 function renderOrganTile(element, organ) {
   const step = Math.min(art.leftMaxStep, art.leftHeight / organ.leftText.length);
   const start = (art.leftArea - step * organ.leftText.length) / 2 + step * art.leftBaseline;
-  const left = [...organ.leftText].map((letter, index) =>
-    `<text x="${art.leftX}" y="${start + index * step}" text-anchor="middle"
-      font-size="${Math.min(art.leftMaxFont, step * art.leftFontScale)}">${letter}</text>`
-  ).join('');
+  const left = [...organ.leftText]
+    .map(
+      (letter, index) =>
+        `<text x="${art.leftX}" y="${start + index * step}" text-anchor="middle"
+      font-size="${Math.min(art.leftMaxFont, step * art.leftFontScale)}">${letter}</text>`,
+    )
+    .join('');
   const bottomSize = Math.min(art.bottomMaxFont, art.bottomFontBudget / organ.bottomText.length);
   element.innerHTML = `<svg class="organ-art" viewBox="${art.viewBox}" aria-hidden="true">
     <g transform="${art.placement}">
@@ -359,11 +408,12 @@ function renderConditionTile(element, label) {
   const pathId = `condition-outline-${++conditionPathId}`;
   const text = plainLabel(label);
   // Leave a gap at the top-left seam and give longer labels more of the outline.
-  const textLength = Math.min(830, [...text].length * 27);
+  const textLength = Math.min(790, [...text].length * 27);
   element.innerHTML = `<svg class="condition-art" viewBox="0 0 256 256" aria-hidden="true">
     <defs>
-      <path id="${pathId}" d="M 12,30 V 220 Q 12,244 36,244 H 220 Q 244,244 244,220
-        V 36 Q 244,12 220,12 H 36 Q 19,12 14,23"/>
+      <path id="${pathId}" d="M 12,68 V 188 A 56,56 0 0 0 68,244
+        H 188 A 56,56 0 0 0 244,188 V 68 A 56,56 0 0 0 188,12
+        H 68 A 56,56 0 0 0 21,38"/>
     </defs>
     <text font-size="34" textLength="${textLength}" lengthAdjust="spacing"><textPath href="#${pathId}"></textPath></text>
   </svg>`;
@@ -401,10 +451,14 @@ function animateClear(index) {
   button.querySelector('.clearing-tile')?.remove();
   button.append(overlay);
   const timeout = setTimeout(() => overlay.remove(), rules.clearAnimationTimeoutMs);
-  overlay.addEventListener('animationend', () => {
-    clearTimeout(timeout);
-    overlay.remove();
-  }, { once: true });
+  overlay.addEventListener(
+    'animationend',
+    () => {
+      clearTimeout(timeout);
+      overlay.remove();
+    },
+    { once: true },
+  );
 }
 
 function render() {
@@ -414,10 +468,16 @@ function render() {
   cells.forEach((tile, index) => {
     const button = buttons[index];
     const style = tiles[tile];
-    const destination = selected !== null && canSlideTo(selected, index) &&
+    const destination =
+      selected !== null &&
+      canSlideTo(selected, index) &&
       moves + (rules.countDistance ? slideDistance(selected, index) : 1) <= moveLimit;
-    const partner = tile !== null && tile !== 'black' && tile !== 'fixed' &&
-      tile === selectedTile && index !== selected;
+    const partner =
+      tile !== null &&
+      tile !== 'black' &&
+      tile !== 'fixed' &&
+      tile === selectedTile &&
+      index !== selected;
     button.className = 'cell';
     button.classList.toggle('empty', tile === null);
     button.classList.toggle('black', tile === 'black');
@@ -430,10 +490,20 @@ function render() {
     const hideLabel = index !== selected && !partner && label;
     const description = label ? label.type + (hideLabel ? '' : ', ' + plainLabel(label.text)) : '';
     button.title = description;
-    button.setAttribute('aria-label', (tile === 'fixed' ? copy.fixedTile : tile === 'black' ? copy.blackTile :
-      tile === null ? copy.emptyTile : (description || format(copy.tile, { number: style.symbol }))) + ', ' +
-      format(copy.position, { row: Math.floor(index / size) + 1, column: (index % size) + 1 }) +
-      (destination ? ', ' + copy.destination : '') + (partner ? ', ' + copy.matching : ''));
+    button.setAttribute(
+      'aria-label',
+      (tile === 'fixed'
+        ? copy.fixedTile
+        : tile === 'black'
+          ? copy.blackTile
+          : tile === null
+            ? copy.emptyTile
+            : description || format(copy.tile, { number: style.symbol })) +
+        ', ' +
+        format(copy.position, { row: Math.floor(index / size) + 1, column: (index % size) + 1 }) +
+        (destination ? ', ' + copy.destination : '') +
+        (partner ? ', ' + copy.matching : ''),
+    );
     if (tile === null || tile === 'fixed') button.removeAttribute('aria-pressed');
     else button.setAttribute('aria-pressed', String(selected === index));
   });
@@ -442,7 +512,7 @@ function render() {
 let drag = null;
 let suppressClick = false;
 
-board.addEventListener('pointerdown', event => {
+board.addEventListener('pointerdown', (event) => {
   if (!event.isPrimary || event.button !== 0) return;
   suppressClick = false;
   const button = event.target.closest('.cell');
@@ -452,7 +522,7 @@ board.addEventListener('pointerdown', event => {
   drag = { pointerId: event.pointerId, source, x: event.clientX, y: event.clientY, active: false };
 });
 
-board.addEventListener('pointermove', event => {
+board.addEventListener('pointermove', (event) => {
   if (!drag || drag.pointerId !== event.pointerId) return;
   if (!drag.active) {
     if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < rules.dragThreshold) return;
@@ -486,7 +556,7 @@ function finishDrag() {
   drag = null;
 }
 
-board.addEventListener('pointerup', event => {
+board.addEventListener('pointerup', (event) => {
   if (!drag || drag.pointerId !== event.pointerId) return;
   const { source, active } = drag;
   const button = active
@@ -505,14 +575,18 @@ function cancelDrag(event) {
 
 board.addEventListener('pointercancel', cancelDrag);
 board.addEventListener('lostpointercapture', cancelDrag);
-board.addEventListener('pointerleave', event => {
+board.addEventListener('pointerleave', (event) => {
   if (!drag?.active) cancelDrag(event);
 });
-board.addEventListener('click', event => {
-  if (!suppressClick || event.detail === 0) return;
-  suppressClick = false;
-  event.stopPropagation();
-}, true);
+board.addEventListener(
+  'click',
+  (event) => {
+    if (!suppressClick || event.detail === 0) return;
+    suppressClick = false;
+    event.stopPropagation();
+  },
+  true,
+);
 
 shuffle.addEventListener('click', () => {
   finishDrag();

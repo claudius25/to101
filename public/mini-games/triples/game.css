@@ -65,10 +65,12 @@ button { font: inherit; cursor: pointer; }
   text-wrap: balance;
 }
 .organ-art, .condition-art {
-  position: absolute; inset: var(--family-tile-inset); visibility: hidden;
-  width: calc(100% - 2 * var(--family-tile-inset));
-  height: calc(100% - 2 * var(--family-tile-inset));
+  --art-inset: var(--family-tile-inset);
+  position: absolute; inset: var(--art-inset); visibility: hidden;
+  width: calc(100% - 2 * var(--art-inset));
+  height: calc(100% - 2 * var(--art-inset));
 }
+.condition-art { --art-inset: 8%; }
 .cell:is(:active, .partner, [aria-pressed="true"]) :is(.family-label, .organ-art, .condition-art),
 .drag-tile :is(.family-label, .organ-art, .condition-art) { visibility: visible; }
 .organ-art text,
