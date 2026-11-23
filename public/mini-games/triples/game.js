@@ -45,7 +45,7 @@ for (const [organ, condition, care, url, note] of examples) {
 
 const tileLabels = new Map();
 const colors = families.map(family => family.id);
-const TILE_COLORS = families.map(family => family.tileColor);
+const familyTileColors = families.map(family => family.tileColor);
 
 function rgb(hex) {
   return hex.slice(1).match(/../g).map(channel => parseInt(channel, 16));
@@ -91,7 +91,7 @@ function labelColor(channels) {
 }
 
 const tiles = Object.fromEntries(colors.map((id, index) => {
-  const color = TILE_COLORS[index];
+  const color = familyTileColors[index];
   const channels = rgb(color);
   return [id, {
     color, channels, lab: toOklab(channels), labelColor: labelColor(channels), symbol: String(index + 1)
@@ -353,17 +353,36 @@ function renderOrganTile(element, organ) {
   </svg>`;
 }
 
+let conditionPathId = 0;
+
+function renderConditionTile(element, label) {
+  const pathId = `condition-outline-${++conditionPathId}`;
+  const text = plainLabel(label);
+  // Leave a gap at the top-left seam and give longer labels more of the outline.
+  const textLength = Math.min(830, [...text].length * 27);
+  element.innerHTML = `<svg class="condition-art" viewBox="0 0 256 256" aria-hidden="true">
+    <defs>
+      <path id="${pathId}" d="M 12,30 V 220 Q 12,244 36,244 H 220 Q 244,244 244,220
+        V 36 Q 244,12 220,12 H 36 Q 19,12 14,23"/>
+    </defs>
+    <text font-size="34" textLength="${textLength}" lengthAdjust="spacing"><textPath href="#${pathId}"></textPath></text>
+  </svg>`;
+  element.querySelector('textPath').textContent = text;
+}
+
 function showTileText(element, tile, index) {
   const label = tileLabels.get(index);
-  element.classList.toggle('text-tile', Boolean(label && !label.organ));
+  const isCondition = label?.type === labelTypes[1];
+  element.classList.toggle('text-tile', Boolean(label && !label.organ && !isCondition));
   element.classList.toggle('family-face', Boolean(label));
   element.style.setProperty('--family-color', label ? tile.color : '');
   element.style.color = tile?.labelColor ?? '';
   if (label?.organ) renderOrganTile(element, label.organ);
+  else if (isCondition) renderConditionTile(element, label.text);
   else if (label) {
     element.textContent = '';
     const text = document.createElement('span');
-    text.className = label.type === labelTypes[1] ? 'family-label condition-text' : 'family-label care-text';
+    text.className = 'family-label care-text';
     text.textContent = label.text;
     element.append(text);
   } else element.textContent = label?.text ?? tile?.symbol ?? '';

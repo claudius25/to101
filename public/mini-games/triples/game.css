@@ -61,18 +61,23 @@ button { font: inherit; cursor: pointer; }
   display: grid; place-items: center;
   padding: var(--label-padding); visibility: hidden;
 }
-.organ-art {
+.care-text {
+  text-wrap: balance;
+}
+.organ-art, .condition-art {
   position: absolute; inset: var(--family-tile-inset); visibility: hidden;
   width: calc(100% - 2 * var(--family-tile-inset));
   height: calc(100% - 2 * var(--family-tile-inset));
 }
-.cell:is(:active, .partner, [aria-pressed="true"]) :is(.family-label, .organ-art),
-.drag-tile :is(.family-label, .organ-art) { visibility: visible; }
-.organ-art text {
-  fill: currentColor;
+.cell:is(:active, .partner, [aria-pressed="true"]) :is(.family-label, .organ-art, .condition-art),
+.drag-tile :is(.family-label, .organ-art, .condition-art) { visibility: visible; }
+.organ-art text,
+.condition-art text,
+.care-text {
   font-family: var(--organ-font);
   font-weight: var(--organ-font-weight);
 }
+.organ-art text, .condition-art text { fill: currentColor; }
 .organ-silhouette {
   fill: var(--organ-white); stroke: var(--text-dark); stroke-width: 1.25;
 }
