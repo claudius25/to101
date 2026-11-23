@@ -32,3 +32,14 @@
   --tile-font-weight: 650;
   --clear-duration: 260ms;
 }
+
+@media (max-width: 600px) {
+  :root {
+    --tile-radius: 5px;
+    --board-gap: clamp(4px, 1.25vw, 8px);
+    --board-padding: 6px;
+    --page-padding: 16px 8px;
+    --family-tile-inset: 8%;
+    --label-font-size: clamp(0.5rem, 2.2vw, 0.72rem);
+  }
+}
