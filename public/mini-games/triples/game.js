@@ -57,11 +57,11 @@ for (const [organ, condition, care, url, note] of examples) {
   const item = document.createElement('li');
   item.textContent =
     [organ, condition, care].map(plainLabel).join(' → ') + '. ' + (note ? note + ' ' : '');
-  const link = document.createElement('a');
-  link.href = url;
-  link.textContent = copy.source;
-  item.append(link);
-  reference.append(item);
+  // const link = document.createElement('a');
+  // link.href = url;
+  // link.textContent = copy.source;
+  // item.append(link);
+  // reference.append(item);
 }
 
 const tileLabels = new Map();
@@ -347,7 +347,9 @@ function play(index) {
       let blackSlide = slide?.path[1] === blackIndex ? slide : null;
       let captured = 0;
       while (moves + grayCost <= moveLimit) {
-        const grayIndex = cells.findIndex((tile, target) => tile === 'fixed' && adjacent(blackIndex, target));
+        const grayIndex = cells.findIndex(
+          (tile, target) => tile === 'fixed' && adjacent(blackIndex, target),
+        );
         if (grayIndex === -1) break;
         if (blackSlide) {
           blackSlide.path.push(grayIndex);
@@ -420,11 +422,21 @@ function renderOrganTile(element, organ) {
     .join('');
   const bottomLength = Math.min(art.bottomWidth, fontSize * organ.bottomText.length * 0.8);
   const imageUrl = `../../assets/triples/${organ.image}`;
-  const image = organ.imageRegion
-    ? `<svg x="55" y="2" width="193" height="205" viewBox="${organ.imageRegion}">
+  const imageBox = { x: 55, y: 2, width: 193, height: 205 };
+  let image = `<image href="${imageUrl}" x="${imageBox.x}" y="${imageBox.y}"
+    width="${imageBox.width}" height="${imageBox.height}"/>`;
+  if (organ.imageRegion) {
+    const [, , regionWidth, regionHeight] = organ.imageRegion.split(' ').map(Number);
+    const scale = Math.min(imageBox.width / regionWidth, imageBox.height / regionHeight);
+    const width = regionWidth * scale;
+    const height = regionHeight * scale;
+    const x = imageBox.x + (imageBox.width - width) / 2;
+    const y = imageBox.y + (imageBox.height - height) / 2;
+    image = `<svg x="${x}" y="${y}" width="${width}" height="${height}"
+        viewBox="${organ.imageRegion}" overflow="hidden">
         <image href="${imageUrl}" width="1536" height="1024"/>
-      </svg>`
-    : `<image href="${imageUrl}" x="55" y="2" width="193" height="205"/>`;
+      </svg>`;
+  }
   element.innerHTML = `<svg class="organ-art" viewBox="${art.viewBox}" aria-hidden="true">
     ${image}
     <g font-size="${fontSize}">
@@ -444,7 +456,8 @@ function showTileText(element, tile, index) {
   else if (label) {
     element.textContent = '';
     const text = document.createElement('span');
-    text.className = label.type === labelTypes[1] ? 'family-label condition-text' : 'family-label care-text';
+    text.className =
+      label.type === labelTypes[1] ? 'family-label condition-text' : 'family-label care-text';
     text.textContent = label.text;
     element.append(text);
   } else element.textContent = label?.text ?? tile?.symbol ?? '';

@@ -30,8 +30,7 @@ const TRIPLES_SETTINGS = {
   copy: {
     title: 'Slide & Match: Triples',
     instructions: '',
-    blackRule:
-      'The black tile can chain through edge-adjacent gray squares for {cost} extra moves each.',
+    blackRule: '',
     goal: 'Match all {groups} groups in {limit} moves or fewer to win.',
     moveLabel: 'Moves',
     newBoard: 'New board',
