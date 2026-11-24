@@ -145,6 +145,7 @@ shuffle.textContent = copy.newBoard;
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const activeEffects = new Set();
 const slideDurationMs = 180;
+const suctionPauseMs = 250;
 let cells;
 let selected;
 let moves;
@@ -474,12 +475,13 @@ function animateSuction(target, captured) {
   vortex.setAttribute('aria-hidden', 'true');
   destination.append(vortex);
 
-  const timing = { delay: slideDurationMs, duration: 460, fill: 'both' };
+  const timing = { delay: slideDurationMs + suctionPauseMs, duration: 520, fill: 'both' };
   const pulse = vortex.animate(
     [
-      { transform: 'scale(.6) rotate(0deg)', opacity: 0 },
-      { transform: 'scale(1.65) rotate(100deg)', opacity: .95, offset: .35 },
-      { transform: 'scale(.55) rotate(300deg)', opacity: 0 },
+      { transform: 'scale(.65) rotate(0deg)', opacity: 0 },
+      { transform: 'scale(1.65) rotate(90deg)', opacity: 1, offset: .25 },
+      { transform: 'scale(1.12) rotate(245deg)', opacity: .9, offset: .78 },
+      { transform: 'scale(.32) rotate(390deg)', opacity: 0 },
     ],
     timing,
   );
@@ -495,13 +497,24 @@ function animateSuction(target, captured) {
     const dy = destination.offsetTop - source.offsetTop;
     const motion = piece.animate(
       [
-        { transform: 'translate(0, 0) scale(1)', opacity: 1 },
+        { transform: 'translate(0, 0) scale(1)', opacity: 1, filter: 'none' },
+        {
+          transform: 'translate(0, 0) scale(1)',
+          opacity: 1,
+          filter: 'drop-shadow(0 0 5px #80ddff)',
+          offset: .14,
+        },
         {
           transform: `translate(${dx * .55 - dy * .24}px, ${dy * .55 + dx * .24}px) rotate(65deg) scale(.62)`,
           opacity: .95,
+          filter: 'drop-shadow(0 0 10px #a48aff)',
           offset: .6,
         },
-        { transform: `translate(${dx}px, ${dy}px) rotate(160deg) scale(.06)`, opacity: 0 },
+        {
+          transform: `translate(${dx}px, ${dy}px) rotate(160deg) scale(.06)`,
+          opacity: 0,
+          filter: 'drop-shadow(0 0 12px #ddfcff)',
+        },
       ],
       { ...timing, easing: 'cubic-bezier(.45, 0, .75, .6)' },
     );
