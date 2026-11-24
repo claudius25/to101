@@ -25,6 +25,7 @@ button { font: inherit; cursor: pointer; }
 }
 .cell { position: relative; min-width: 0; aspect-ratio: 1; border-radius: var(--tile-radius); border: 1px solid transparent;
   background: transparent; color: var(--text-dark); font-size: var(--tile-font-size);
+  -webkit-tap-highlight-color: transparent;
   font-weight: var(--tile-font-weight); padding: 0; transition: filter var(--tile-transition); }
 .tile-face {
   position: absolute; inset: -1px;
