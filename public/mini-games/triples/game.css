@@ -9,8 +9,13 @@ button { font: inherit; cursor: pointer; }
 .board-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .move-count { font-weight: 700; font-variant-numeric: tabular-nums; }
 .toolbar button { padding: 7px 12px; border: 1px solid var(--empty-tile-border); border-radius: 8px; background: var(--empty-tile); color: var(--text-light); }
-#board { position: relative; touch-action: none; user-select: none; display: grid; grid-template-columns: repeat(var(--size), minmax(0, 1fr)); gap: var(--board-gap);
-  padding: var(--board-padding); border-radius: var(--board-radius); background: var(--board-background); }
+#board { position: relative; touch-action: none; user-select: none; display: grid; grid-template-columns: repeat(var(--size), minmax(0, 1fr));
+  column-gap: var(--board-gap);
+  /* A raised face must clear the sidewall of the tile in the row above. */
+  row-gap: max(var(--board-gap), calc(var(--tile-lift) + var(--tile-depth) + 3px));
+  padding: var(--board-padding);
+  padding-block-start: max(var(--board-padding), calc(var(--tile-lift) + 3px));
+  border-radius: var(--board-radius); background: var(--board-background); }
 #board-result:not([hidden]) {
   position: absolute; top: 50%; left: 50%; width: 100%; height: 100%;
   transform: translate(-50%, -50%); z-index: 4; display: grid; place-items: center;
@@ -20,9 +25,11 @@ button { font: inherit; cursor: pointer; }
 }
 .cell { position: relative; min-width: 0; aspect-ratio: 1; border-radius: var(--tile-radius); border: 1px solid transparent;
   background: transparent; color: var(--text-dark); font-size: var(--tile-font-size);
-  font-weight: var(--tile-font-weight); padding: 0; transition: filter var(--tile-transition), transform var(--tile-transition); }
+  font-weight: var(--tile-font-weight); padding: 0; transition: filter var(--tile-transition); }
 .tile-face {
   position: absolute; inset: -1px;
+  translate: 0 calc(-1 * var(--lift, 0px));
+  transition: translate var(--tile-transition), box-shadow var(--tile-transition);
 }
 .cell.empty .tile-face:not(.suction-piece) { visibility: hidden; }
 .clearing-tile {
@@ -40,10 +47,13 @@ button { font: inherit; cursor: pointer; }
   box-shadow:
     inset 0 1px 1px rgb(255 255 255 / 68%),
     inset 0 -1px 1px rgb(255 255 255 / 24%),
-    0 var(--tile-depth) 0 color-mix(in srgb, var(--tile), black 48%),
-    0 calc(var(--tile-depth) + 3px) 9px rgb(0 0 0 / 72%);
+    0 calc(var(--tile-depth) + var(--lift, 0px)) 0 color-mix(in srgb, var(--tile), black 48%),
+    0 calc(var(--tile-depth) + var(--lift, 0px) + 3px) 9px rgb(0 0 0 / 72%),
+    0 0 clamp(8px, 1.8vw, 16px) 2px
+      color-mix(in srgb, var(--glow-color, var(--tile)) var(--glow, 0%), transparent);
 }
 :is(.black-piece, .fixed-piece) { border-radius: 50%; }
+.black-piece { --glow-color: color-mix(in srgb, var(--tile), white 42%); }
 .black-piece::after {
   content: '';
   width: 16%;
@@ -68,27 +78,38 @@ button { font: inherit; cursor: pointer; }
   100% { transform: scale(.2); opacity: 0; }
 }
 .cell.destination { border: 2px dashed var(--text-muted); }
-.cell.partner { z-index: 1; transform: scale(var(--active-scale)); }
+.cell.partner { z-index: 1; }
 .cell[aria-pressed="true"],
-.cell:not(.empty):not(.fixed):active { z-index: 2; transform: scale(var(--active-scale)); }
+.cell:not(.empty):not(.fixed):active { z-index: 2; }
+.cell:not(.empty):not(.fixed):is(:active, .partner, [aria-pressed="true"]) > .tile-face {
+  --lift: var(--tile-lift);
+}
+:is(.cell:not(.empty):not(.fixed):is(:active, .partner, [aria-pressed="true"]) > .tile-face,
+    .drag-tile, .sliding-tile:not(.settled-tile)) {
+  --glow: 75%;
+}
 @media (hover: hover) {
   .cell:not(.empty):not(.fixed):hover { filter: brightness(1.06); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .cell { transition: none; }
+  .cell, .tile-face { transition: none; }
 }
 .cell.drag-source .tile-face { opacity: .25; }
 .cell.drag-source .organ-art { visibility: hidden; }
 .drag-tile {
+  --lift: var(--tile-lift);
   position: fixed; z-index: 10;
-  transform: translate(-50%, -50%) scale(var(--active-scale));
+  transform: translate(-50%, calc(-50% - var(--lift)));
   color: var(--text-dark); font-size: var(--tile-font-size);
   font-weight: var(--tile-font-weight);
 }
 .sliding-tile {
+  --lift: var(--tile-lift);
   position: absolute; z-index: 3;
+  translate: 0 calc(-1 * var(--lift));
   font-size: var(--tile-font-size); font-weight: var(--tile-font-weight);
 }
+.sliding-tile.settled-tile { --lift: 0px; }
 .text-tile {
   padding: 1px;
   font-size: var(--label-font-size);

@@ -12,7 +12,7 @@
   --tile-depth: clamp(3px, 1vw, 8px);
   --family-tile-inset: calc(100% / 6);
   --tile-transition: 150ms ease-out;
-  --active-scale: 1.2;
+  --tile-lift: clamp(7px, 2vw, 16px);
   --page-padding: 24px 16px;
   --content-width: 760px;
   --board-gap: clamp(25px, 5vw, 44px);

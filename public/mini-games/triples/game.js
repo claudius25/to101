@@ -145,6 +145,8 @@ shuffle.textContent = copy.newBoard;
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const activeEffects = new Set();
 const slideDurationMs = 180;
+const slideHoldMs = 100;
+const slideSettleMs = 150;
 const suctionPauseMs = 250;
 let cells;
 let selected;
@@ -453,19 +455,32 @@ function animateSlide({ face, source: sourceIndex, target }) {
 
   const dx = buttons[target].offsetLeft - source.offsetLeft;
   const dy = buttons[target].offsetTop - source.offsetTop;
+  const settleDelay = slideDurationMs + slideHoldMs;
+  const liftedStyle = getComputedStyle(face);
+  const lifted = { translate: liftedStyle.translate, boxShadow: liftedStyle.boxShadow };
+  face.classList.add('settled-tile');
+  const settledStyle = getComputedStyle(face);
+  const settled = { translate: settledStyle.translate, boxShadow: settledStyle.boxShadow };
   const motion = face.animate(
     [{ transform: 'translate(0, 0)' }, { transform: `translate(${dx}px, ${dy}px)` }],
-    { duration: slideDurationMs, easing: 'ease-in-out' },
+    { duration: slideDurationMs, easing: 'ease-in-out', fill: 'forwards' },
   );
-  const conceal = destination.animate([{ opacity: 0 }, { opacity: 0 }], slideDurationMs);
+  const settle = face.animate([lifted, settled], {
+    delay: settleDelay,
+    duration: slideSettleMs,
+    easing: 'ease-out',
+    fill: 'both',
+  });
+  const conceal = destination.animate([{ opacity: 0 }, { opacity: 0 }], settleDelay + slideSettleMs);
   const finish = () => {
     motion.cancel();
+    settle.cancel();
     conceal.cancel();
     face.remove();
     activeEffects.delete(finish);
   };
   activeEffects.add(finish);
-  motion.onfinish = finish;
+  settle.onfinish = finish;
 }
 
 function animateSuction(target, captured) {
