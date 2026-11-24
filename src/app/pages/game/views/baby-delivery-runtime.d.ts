@@ -1,6 +1,18 @@
 export type BabyDeliveryQuality = 'auto' | 'low' | 'medium' | 'high';
 export type BabyDeliveryMode = 'level' | 'endless';
 
+/** `chase` follows behind the stork (steer in 2D); `top` is an overhead racer view with left/right steering only. */
+export type BabyDeliveryView = 'chase' | 'top';
+
+/** Pixel-art rendering: the scene is drawn at 1/pixelSize resolution and its colours snapped to a palette. */
+export interface BabyDeliveryRetro {
+  on: boolean;
+  /** Screen pixels per art pixel, 1–8. */
+  pixelSize: number;
+  palette: 'village' | 'handheld' | 'full';
+  dither: boolean;
+}
+
 export interface BabyDeliveryResult {
   success: boolean;
   title: string;
@@ -46,6 +58,8 @@ export interface BabyDeliveryStatus {
   floaters: BabyDeliveryFloater[];
   result: BabyDeliveryResult | null;
   qualityLevel: Exclude<BabyDeliveryQuality, 'auto'>;
+  retro: BabyDeliveryRetro;
+  view: BabyDeliveryView;
 }
 
 export interface BabyDeliveryRuntime {
@@ -63,6 +77,10 @@ export interface BabyDeliveryRuntime {
   /** Analogue steering in -1..1 (x: screen right, y: up); pass null to let go. */
   steer(x: number | null, y: number | null): void;
   setQuality(mode: BabyDeliveryQuality): void;
+  /** Switch camera; takes effect smoothly, even mid-flight. */
+  setView(view: BabyDeliveryView): void;
+  /** Change the pixel-art settings; unspecified fields keep their current value. */
+  setRetro(options: Partial<BabyDeliveryRetro>): void;
   suspend(): void;
   dispose(): void;
 }
@@ -73,4 +91,8 @@ export function createBabyDelivery(options?: {
   quality?: BabyDeliveryQuality;
   /** Soft chime on feather pickups. */
   sound?: boolean;
+  /** Pixel-art look, on by default (3× pixels, village palette, dithering). */
+  retro?: Partial<BabyDeliveryRetro>;
+  /** Starting camera, `chase` by default. */
+  view?: BabyDeliveryView;
 }): BabyDeliveryRuntime;

@@ -130,8 +130,8 @@ const tiles = Object.fromEntries(
     ];
   }),
 );
-tiles.black = { color: art.black.color, symbol: art.black.icon };
-tiles.fixed = { color: art.fixed.color, symbol: art.fixed.icon };
+tiles.black = { color: art.black.color, kind: 'black' };
+tiles.fixed = { color: art.fixed.color, kind: 'fixed' };
 
 const board = document.querySelector('#board');
 const boardResult = document.querySelector('#board-result');
@@ -143,7 +143,7 @@ const status = document.querySelector('#status');
 const shuffle = document.querySelector('#shuffle');
 shuffle.textContent = copy.newBoard;
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-const activeSlides = new Set();
+const activeEffects = new Set();
 const slideDurationMs = 180;
 let cells;
 let selected;
@@ -227,7 +227,7 @@ function shuffleInPlace(items) {
 }
 
 function newBoard() {
-  for (const finish of activeSlides) finish();
+  for (const finish of activeEffects) finish();
   const activeColors = chooseBoardColors();
   const deck = activeColors.flatMap((color) => Array(groupSize).fill(color));
   deck.push('black', ...Array(emptyCount).fill(null));
@@ -254,7 +254,7 @@ function newBoard() {
       tileLabels.set(position, {
         text: examples[index][role],
         type: labelTypes[role],
-        organ: role === 0 ? organs[index] : null,
+        organ: role === 0 ? families[index].art : null,
       });
     });
   });
@@ -296,7 +296,8 @@ function slideDistance(source, target) {
 
 function play(index) {
   if (result) return;
-  const slides = [];
+  let slide;
+  const captured = [];
   if (cells[index] === 'fixed') {
     selected = null;
     status.textContent = copy.fixed;
@@ -311,9 +312,8 @@ function play(index) {
       status.textContent = copy.overBudget;
       return;
     }
-    for (const finish of activeSlides) finish();
-    const slide = prepareSlide(selected, index);
-    if (slide) slides.push(slide);
+    for (const finish of activeEffects) finish();
+    slide = prepareSlide(selected, index);
     moves += distance;
     if (tileLabels.has(selected)) {
       tileLabels.set(index, tileLabels.get(selected));
@@ -342,34 +342,18 @@ function play(index) {
     }
 
     const grayCost = rules.blackGrayMoveCost;
-    if (rules.blackClearsGray && merged < groupCount) {
-      let blackIndex = cells.indexOf('black');
-      let blackSlide = slide?.path[1] === blackIndex ? slide : null;
-      let captured = 0;
-      while (moves + grayCost <= moveLimit) {
-        const grayIndex = cells.findIndex(
-          (tile, target) => tile === 'fixed' && adjacent(blackIndex, target),
-        );
-        if (grayIndex === -1) break;
-        if (blackSlide) {
-          blackSlide.path.push(grayIndex);
-        } else {
-          blackSlide = prepareSlide(blackIndex, grayIndex);
-          if (blackSlide) slides.push(blackSlide);
-        }
-        animateClear(grayIndex, ((blackSlide?.path.length ?? 1) - 1) * slideDurationMs);
-        cells[blackIndex] = null;
-        cells[grayIndex] = 'black';
-        blackIndex = grayIndex;
+    if (rules.blackClearsGray && cells[index] === 'black') {
+      for (let target = 0; target < cells.length && moves + grayCost <= moveLimit; target++) {
+        if (cells[target] !== 'fixed' || !adjacent(index, target)) continue;
+        cells[target] = null;
         moves += grayCost;
-        captured++;
+        captured.push(target);
       }
-      if (captured) {
-        const message = format(captured === 1 ? copy.grayMoved : copy.grayChain, {
-          count: captured,
-          cost: captured * grayCost,
+      if (captured.length) {
+        status.textContent = format(captured.length === 1 ? copy.grayMoved : copy.grayChain, {
+          count: captured.length,
+          cost: captured.length * grayCost,
         });
-        status.textContent = matched ? copy.merged + ' ' + message : message;
       }
     }
 
@@ -386,7 +370,10 @@ function play(index) {
     status.textContent = copy.invalid;
   }
   render();
-  for (const slide of slides) animateSlide(slide);
+  if (slide) {
+    animateSlide(slide);
+    if (captured.length) animateSuction(index, captured);
+  }
 }
 
 const buttons = Array.from({ length: size * size }, (_, index) => {
@@ -401,16 +388,7 @@ const buttons = Array.from({ length: size * size }, (_, index) => {
   return button;
 });
 
-const organs = families.map((family) => ({
-  id: family.id,
-  name: plainLabel(family.organ),
-  image: family.art.image,
-  imageRegion: family.art.imageRegion,
-  leftText: family.art.leftText,
-  bottomText: family.art.bottomText,
-}));
-
-function renderOrganTile(element, organ) {
+function renderOrganLabel(element, organ) {
   const fontSize = Math.min(art.organMaxFont, art.leftHeight / organ.leftText.length);
   const step = fontSize * 0.84;
   const start = art.bottomY - step * organ.leftText.length;
@@ -421,27 +399,10 @@ function renderOrganTile(element, organ) {
     )
     .join('');
   const bottomLength = Math.min(art.bottomWidth, fontSize * organ.bottomText.length * 0.8);
-  const imageUrl = `../../assets/triples/${organ.image}`;
-  const imageBox = { x: 55, y: 2, width: 193, height: 205 };
-  let image = `<image href="${imageUrl}" x="${imageBox.x}" y="${imageBox.y}"
-    width="${imageBox.width}" height="${imageBox.height}"/>`;
-  if (organ.imageRegion) {
-    const [, , regionWidth, regionHeight] = organ.imageRegion.split(' ').map(Number);
-    const scale = Math.min(imageBox.width / regionWidth, imageBox.height / regionHeight);
-    const width = regionWidth * scale;
-    const height = regionHeight * scale;
-    const x = imageBox.x + (imageBox.width - width) / 2;
-    const y = imageBox.y + (imageBox.height - height) / 2;
-    image = `<svg x="${x}" y="${y}" width="${width}" height="${height}"
-        viewBox="${organ.imageRegion}" overflow="hidden">
-        <image href="${imageUrl}" width="1536" height="1024"/>
-      </svg>`;
-  }
-  element.innerHTML = `<svg class="organ-art" viewBox="${art.viewBox}" aria-hidden="true">
-    ${image}
+  element.innerHTML = `<svg class="organ-label family-label" viewBox="0 0 256 256" aria-hidden="true">
     <g font-size="${fontSize}">
       ${left}
-      <text x="${art.bottomX}" y="${art.bottomY}" textLength="${bottomLength}" lengthAdjust="spacingAndGlyphs">${organ.bottomText}</text>
+      <text x="14" y="${art.bottomY}" textLength="${bottomLength}" lengthAdjust="spacingAndGlyphs">${organ.bottomText}</text>
     </g>
   </svg>`;
 }
@@ -449,18 +410,25 @@ function renderOrganTile(element, organ) {
 function showTileText(element, tile, index) {
   const label = tileLabels.get(index);
   element.classList.toggle('text-tile', Boolean(label && !label.organ));
-  element.classList.toggle('family-face', Boolean(label));
-  element.style.setProperty('--family-color', label ? tile.color : '');
+  element.classList.toggle('black-piece', tile?.kind === 'black');
+  element.classList.toggle('fixed-piece', tile?.kind === 'fixed');
+  element.style.setProperty('--tile', tile?.color ?? '');
   element.style.color = tile?.labelColor ?? '';
-  if (label?.organ) renderOrganTile(element, label.organ);
-  else if (label) {
+  if (label?.organ) {
+    const image = document.createElement('img');
+    image.className = 'organ-art';
+    image.alt = '';
+    image.src = '../../assets/triples/organs/' + label.organ.image;
+    renderOrganLabel(element, label.organ);
+    element.append(image);
+  } else if (label) {
     element.textContent = '';
     const text = document.createElement('span');
     text.className =
       label.type === labelTypes[1] ? 'family-label condition-text' : 'family-label care-text';
     text.textContent = label.text;
     element.append(text);
-  } else element.textContent = label?.text ?? tile?.symbol ?? '';
+  } else element.textContent = tile?.symbol ?? '';
 }
 
 function prepareSlide(source, target) {
@@ -469,51 +437,101 @@ function prepareSlide(source, target) {
   face.className = 'sliding-tile';
   face.setAttribute('aria-hidden', 'true');
   const tile = tiles[cells[source]];
-  face.style.setProperty('--tile', tile.color);
   showTileText(face, tile, source);
-  return { face, path: [source, target] };
+  return { face, source, target };
 }
 
-function animateSlide({ face, path }) {
-  const source = buttons[path[0]];
-  const destination = buttons[path.at(-1)].firstElementChild;
+function animateSlide({ face, source: sourceIndex, target }) {
+  const source = buttons[sourceIndex];
+  const destination = buttons[target].firstElementChild;
   face.style.left = `${source.offsetLeft}px`;
   face.style.top = `${source.offsetTop}px`;
   face.style.width = `${source.offsetWidth}px`;
   face.style.height = `${source.offsetHeight}px`;
   board.append(face);
 
-  const keyframes = path.map((index) => ({
-    transform: `translate(${buttons[index].offsetLeft - source.offsetLeft}px, ${buttons[index].offsetTop - source.offsetTop}px)`,
-    easing: 'ease-in-out',
-  }));
-  const duration = slideDurationMs * (path.length - 1);
-  const motion = face.animate(keyframes, duration);
-  const conceal = destination.animate([{ opacity: 0 }, { opacity: 0 }], duration);
+  const dx = buttons[target].offsetLeft - source.offsetLeft;
+  const dy = buttons[target].offsetTop - source.offsetTop;
+  const motion = face.animate(
+    [{ transform: 'translate(0, 0)' }, { transform: `translate(${dx}px, ${dy}px)` }],
+    { duration: slideDurationMs, easing: 'ease-in-out' },
+  );
+  const conceal = destination.animate([{ opacity: 0 }, { opacity: 0 }], slideDurationMs);
   const finish = () => {
     motion.cancel();
     conceal.cancel();
     face.remove();
-    activeSlides.delete(finish);
+    activeEffects.delete(finish);
   };
-  activeSlides.add(finish);
+  activeEffects.add(finish);
   motion.onfinish = finish;
 }
 
-function animateClear(index, delay = 0) {
+function animateSuction(target, captured) {
+  const destination = buttons[target];
+  const vortex = document.createElement('span');
+  vortex.className = 'suction-vortex';
+  vortex.setAttribute('aria-hidden', 'true');
+  destination.append(vortex);
+
+  const timing = { delay: slideDurationMs, duration: 460, fill: 'both' };
+  const pulse = vortex.animate(
+    [
+      { transform: 'scale(.6) rotate(0deg)', opacity: 0 },
+      { transform: 'scale(1.65) rotate(100deg)', opacity: .95, offset: .35 },
+      { transform: 'scale(.55) rotate(300deg)', opacity: 0 },
+    ],
+    timing,
+  );
+  const pieces = captured.map((index) => {
+    const source = buttons[index];
+    const piece = document.createElement('span');
+    piece.className = 'tile-face suction-piece';
+    piece.setAttribute('aria-hidden', 'true');
+    showTileText(piece, tiles.fixed, index);
+    source.append(piece);
+
+    const dx = destination.offsetLeft - source.offsetLeft;
+    const dy = destination.offsetTop - source.offsetTop;
+    const motion = piece.animate(
+      [
+        { transform: 'translate(0, 0) scale(1)', opacity: 1 },
+        {
+          transform: `translate(${dx * .55 - dy * .24}px, ${dy * .55 + dx * .24}px) rotate(65deg) scale(.62)`,
+          opacity: .95,
+          offset: .6,
+        },
+        { transform: `translate(${dx}px, ${dy}px) rotate(160deg) scale(.06)`, opacity: 0 },
+      ],
+      { ...timing, easing: 'cubic-bezier(.45, 0, .75, .6)' },
+    );
+    return { piece, motion };
+  });
+  const finish = () => {
+    pulse.cancel();
+    vortex.remove();
+    for (const { piece, motion } of pieces) {
+      motion.cancel();
+      piece.remove();
+    }
+    activeEffects.delete(finish);
+  };
+  activeEffects.add(finish);
+  pulse.onfinish = finish;
+}
+
+function animateClear(index) {
   if (reducedMotion.matches) return;
   const button = buttons[index];
   const tile = tiles[cells[index]];
   const overlay = document.createElement('span');
   overlay.className = 'clearing-tile';
   overlay.setAttribute('aria-hidden', 'true');
-  overlay.style.setProperty('--clearing-color', tile.color);
-  overlay.style.animationDelay = `${delay}ms`;
   showTileText(overlay, tile, index);
 
   button.querySelector('.clearing-tile')?.remove();
   button.append(overlay);
-  const timeout = setTimeout(() => overlay.remove(), delay + rules.clearAnimationTimeoutMs);
+  const timeout = setTimeout(() => overlay.remove(), rules.clearAnimationTimeoutMs);
   overlay.addEventListener(
     'animationend',
     () => {
@@ -546,14 +564,12 @@ function render() {
     button.className = 'cell';
     button.classList.toggle('empty', tile === null);
     button.classList.toggle('destination', destination);
-    button.classList.toggle('black', tile === 'black');
     button.classList.toggle('fixed', tile === 'fixed');
     button.classList.toggle('partner', partner);
-    button.style.setProperty('--tile', style ? style.color : '');
     showTileText(button.firstElementChild, style, index);
     if (tile !== null && tile !== 'black') button.querySelector('.clearing-tile')?.remove();
     const label = tileLabels.get(index);
-    const hideLabel = index !== selected && !partner && label;
+    const hideLabel = !label?.organ && index !== selected && !partner;
     const description = label ? label.type + (hideLabel ? '' : ', ' + plainLabel(label.text)) : '';
     button.title = description;
     button.setAttribute(
@@ -600,10 +616,9 @@ board.addEventListener('pointermove', (event) => {
     const source = buttons[drag.source];
     const tile = cells[drag.source];
     const preview = document.createElement('div');
-    preview.className = tile === 'black' ? 'drag-tile black' : 'drag-tile';
+    preview.className = 'drag-tile';
     preview.setAttribute('aria-hidden', 'true');
     showTileText(preview, tiles[tile], drag.source);
-    preview.style.setProperty('--tile', tiles[tile].color);
     preview.style.width = source.offsetWidth + 'px';
     preview.style.height = source.offsetHeight + 'px';
     source.classList.add('drag-source');

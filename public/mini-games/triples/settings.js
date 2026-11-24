@@ -50,8 +50,8 @@ const TRIPLES_SETTINGS = {
     lossTitle: 'YOU LOSE',
     merged: 'Triple merged.',
     moved: 'Tile moved.',
-    grayMoved: 'Black tile took a gray square for {cost} extra moves.',
-    grayChain: 'Black tile took {count} gray squares for {cost} extra moves.',
+    grayMoved: 'Black tile absorbed a gray tile for {cost} extra moves.',
+    grayChain: 'Black tile absorbed {count} gray tiles for {cost} extra moves.',
     loss: 'You reached {limit} moves. You lost! Choose New board to try again.',
     stuck: 'No moves left. Choose New board to try again.',
     invalid: 'Choose an empty square along a clear row or column.',
@@ -66,19 +66,15 @@ const TRIPLES_SETTINGS = {
   art: {
     black: {
       color: '#090a10',
-      icon: '×',
     },
     fixed: {
       color: '#a2a5b2',
-      icon: '▣',
     },
-    viewBox: '0 0 256 256',
-    leftX: 23,
-    leftHeight: 215,
-    organMaxFont: 52,
-    bottomX: 5,
-    bottomY: 253,
-    bottomWidth: 240,
+    leftX: 32,
+    leftHeight: 172,
+    organMaxFont: 41,
+    bottomY: 237,
+    bottomWidth: 228,
   },
   families: [
     {
@@ -203,8 +199,7 @@ const TRIPLES_SETTINGS = {
       tileColor: TILE_COLORS.skin,
       // tileColor: '#A68160',
       art: {
-        image: '243f496a-01ab-4333-93e6-22d8f3516e6c.png',
-        imageRegion: '620 525 290 470',
+        image: 'skin.png',
         leftText: 'SK',
         bottomText: 'IN',
       },

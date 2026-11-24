@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-export function createBabyDelivery({ assetsUrl = 'assets/baby-delivery/', quality = 'auto', sound = true } = {}) {
+export function createBabyDelivery({ assetsUrl = 'assets/baby-delivery/', quality = 'auto', sound = true, retro = {}, view = 'chase' } = {}) {
 // ======================= tuning =======================
 const TUNE = {
   speedStart: 11, speedMax: 20, speedRamp: 160,   // m/s, and metres per +1 m/s
@@ -12,7 +12,11 @@ const TUNE = {
   swingFree: 30, swingDrain: 0.6,                 // degrees of swing that are free, and meter drain per extra degree per second
   calmRegen: 3, hitCost: 25, bottleGain: 35, featherCalm: 5, lullabySecs: 8,
   camBack: 3.6, camUp: 1.7, goal: 1000,
+  topCruise: 8.4, topCamUp: 15.5, topCamBack: 6, topAhead: 9,   // top view: flying height and overhead camera
 };
+if (view !== 'chase' && view !== 'top') throw new RangeError('Unknown baby-delivery view: ' + view);
+const VIEW = { top: view === 'top' };
+let chaseFov = 62, topFov = 50, topNear = 1;   // topNear < 1 pulls the overhead camera in on narrow screens
 
 const canvas = document.createElement('canvas');
 let disposed = false, loading = true, loadError = '';
@@ -51,16 +55,93 @@ scene.add(sun, sun.target);
 const gradTex = new THREE.DataTexture(new Uint8Array([125,125,125,255, 195,195,195,255, 255,255,255,255]), 3, 1);
 gradTex.minFilter = gradTex.magFilter = THREE.NearestFilter; gradTex.needsUpdate = true;
 const outlineMats = [];
+// ---------------------------------------------------------------- retro pixel pass
+// Render small, snap colours to a palette with light ordered dithering, then scale up with hard pixels.
+const RETRO_PALETTES = {
+  village: ['#22191c', '#4a3630', '#6f6a72', '#b9b6b8', '#ffffff', '#f6ead6', '#e2c9a0', '#c79a64',
+            '#8a5a3c', '#c9573a', '#f07a21', '#f5c29a', '#f29b88', '#f2c14e', '#e3d27c', '#a6d174',
+            '#7fb35a', '#3e7a4a', '#2c5233', '#cfe6f2', '#9ccbe8', '#7ab8dc', '#5a9cc8', '#5f8fc0', '#4a5a72', '#b9a7e8'],
+  handheld: ['#0f380f', '#306230', '#8bac0f', '#9bbc0f'],
+};
+const retroRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, magFilter: THREE.NearestFilter, minFilter: THREE.NearestFilter });
+const retroMat = new THREE.ShaderMaterial({
+  uniforms: { tScene: { value: retroRT.texture }, uPal: { value: Array.from({ length: 32 }, () => new THREE.Color()) }, uPalN: { value: 0 }, uDither: { value: 1 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+  fragmentShader: `
+    uniform sampler2D tScene; uniform vec3 uPal[32]; uniform int uPalN; uniform float uDither;
+    varying vec2 vUv;
+    vec3 toSRGB(vec3 c){ return mix(c * 12.92, 1.055 * pow(c, vec3(1.0/2.4)) - 0.055, step(0.0031308, c)); }
+    float bayer4(vec2 p){
+      int x = int(mod(p.x, 4.0)), y = int(mod(p.y, 4.0));
+      int m[16] = int[16](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
+      return (float(m[x + y * 4]) + 0.5) / 16.0;
+    }
+    void main(){
+      vec3 c = toSRGB(clamp(texture2D(tScene, vUv).rgb, 0.0, 1.0));
+      if (uPalN > 0){
+        if (uPalN <= 4){
+          float l = pow(clamp(dot(c, vec3(0.299, 0.587, 0.114)), 0.0, 1.0), 1.7) + 0.03 + (bayer4(gl_FragCoord.xy) - 0.5) * 0.2 * uDither;
+          c = uPal[int(clamp(floor(l * 4.0), 0.0, 3.0))];
+        } else {
+          c += (bayer4(gl_FragCoord.xy) - 0.5) * 0.04 * uDither;
+          float best = 1e9; vec3 pick = c;
+          for (int i = 0; i < 32; i++){
+            if (i >= uPalN) break;
+            vec3 d = c - uPal[i];
+            float e = dot(d * vec3(0.30, 0.59, 0.11), d) * 3.0 + dot(d, d) * 0.35;
+            if (e < best){ best = e; pick = uPal[i]; }
+          }
+          c = pick;
+        }
+      }
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+  depthTest: false, depthWrite: false,
+});
+const retroScene = new THREE.Scene(), retroCam = new THREE.Camera();
+retroScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), retroMat));
+const OUTLINE = { res: { value: new THREE.Vector2(1, 1) }, px: { value: 1 } };
+function setRetroPalette(name){
+  const pal = RETRO_PALETTES[name];
+  retroMat.uniforms.uPalN.value = pal ? pal.length : 0;
+  if (pal) pal.forEach((hex, i) => { const v = parseInt(hex.slice(1), 16);
+    retroMat.uniforms.uPal.value[i].setRGB(((v >> 16) & 255)/255, ((v >> 8) & 255)/255, (v & 255)/255, THREE.LinearSRGBColorSpace); });
+}
+function renderRetro(scene, camera){
+  renderer.setRenderTarget(retroRT); renderer.render(scene, camera);
+  renderer.setRenderTarget(null); renderer.render(retroScene, retroCam);
+}
+
+// Outlines are pushed out along the normal in screen space: always a fixed pixel width, so they stay
+// a crisp single pixel in retro mode. Works for skinned and instanced meshes alike.
 function makeOutlineMat(width){
   const m = new THREE.MeshBasicMaterial({ color: 0x2B2220, side: THREE.BackSide });
+  const scale = width / 0.0045;
   m.onBeforeCompile = (sh) => {
-    sh.uniforms.uOutline = { value: width };
-    sh.vertexShader = 'uniform float uOutline;\n' + sh.vertexShader.replace('#include <begin_vertex>',
-      'vec3 transformed = vec3( position ) + normalize( normal ) * uOutline;');
+    sh.uniforms.uRes = OUTLINE.res; sh.uniforms.uPx = OUTLINE.px; sh.uniforms.uScale = { value: scale };
+    sh.vertexShader = 'uniform vec2 uRes;\nuniform float uPx;\nuniform float uScale;\n' + sh.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
+      #ifdef USE_SKINNING
+        vec3 outlineObjN = objectNormal;
+      #else
+        vec3 outlineObjN = normal;
+        #ifdef USE_INSTANCING
+          outlineObjN = mat3( instanceMatrix ) * outlineObjN;
+        #endif
+      #endif
+      vec2 clipN = ( projectionMatrix * vec4( normalize( normalMatrix * outlineObjN ), 0.0 ) ).xy;
+      float clipLen = length( clipN );
+      if ( clipLen > 1e-5 ) gl_Position.xy += ( clipN / clipLen ) * max( 1.0, uPx * uScale ) * 2.0 / uRes * gl_Position.w;`);
   };
   outlineMats.push(m);
   return m;
 }
+// Retro look: on by default with 3x3 screen pixels, the village palette and light dithering.
+const RETRO = { on: true, pixelSize: 3, palette: 'village', dither: true, ...retro };
+function validateRetro(next){
+  if (!Number.isInteger(next.pixelSize) || next.pixelSize < 1 || next.pixelSize > 8) throw new RangeError('Retro pixelSize must be an integer from 1 to 8');
+  if (!['village', 'handheld', 'full'].includes(next.palette)) throw new RangeError('Unknown retro palette: ' + next.palette);
+}
+validateRetro(RETRO);
 function stylize(root, width){
   const list = [];
   root.traverse(o => { if (o.isMesh){ o.castShadow = true; o.frustumCulled = false;
@@ -239,6 +320,7 @@ function genChunk(ci){
   if (deliveryChunks.has(ci)){
     const z = z0 + 24, x = roadX(z);
     const it = add('kit_house_a', x, z, Math.PI, 1.35);
+    it.goal = true;
     ch.delivery = { pos: it.pos.clone(), ring: new THREE.Vector3(x, it.pos.y + 14.5, z), glow: new THREE.Vector3(x - 1.68*1.35, it.pos.y + 5.05, z - 4.12), done: false };
     for (const s of [-1, 1]) add('kit_tree_round', x + s*9, z + R(-3, 3), R(0, 6), R(0.9, 1.2));
     for (const s of [-1, 1]) add('kit_fence', x + s*4.5, z - 6, 0, 1, 0, false);
@@ -464,7 +546,7 @@ function drawWorld(dt){
     for (const it of ch.statics) putInst(it.kit, it.pos, it.yaw, it.scale);
     for (const it of ch.deco) putInst(it.kit, it.pos, it.yaw, it.scale);
     for (const w of ch.windmills){ _rz.setFromAxisAngle(ZAX, w.ang); putInst('kit_windmill_blades', w.hub, 0, 1, _rz); }
-    for (const b of ch.balloons){ _v.set(b.pos.x, b.baseY + Math.sin(G.t*0.7 + b.ph)*1.2, b.pos.z); putInst('kit_balloon', _v, b.ph, 1); }
+    for (const b of ch.balloons){ _v.set(b.pos.x, balloonBase(b), b.pos.z); putInst('kit_balloon', _v, b.ph, 1); }
     for (const c of ch.crows){
       const f = Math.sin(G.t*11 + c.ph)*0.7;
       putInst('kit_crow', c.pos, 0, 1);
@@ -472,7 +554,8 @@ function drawWorld(dt){
       _rr.setFromAxisAngle(ZAX, -f); putInst('kit_crow_wing_r', c.pos, 0, 1, _rr);
     }
     for (const pk of ch.pickups) if (!pk.taken){
-      _v.copy(pk.pos); _v.y += Math.sin(G.t*2.4 + pk.pos.z)*0.18;
+      if (VIEW.top && pickupBlocked(ch, pk)) continue;
+      _v.copy(pk.pos); if (VIEW.top) _v.y = layerY(pk.pos.x, pk.pos.z) - 0.2; _v.y += Math.sin(G.t*2.4 + pk.pos.z)*0.18;
       if (pk.type === 'kit_feather'){ _rz.setFromAxisAngle(ZAX, 0.5); putInst(pk.type, _v, G.t*2.2 + pk.pos.z, 1.8, _rz); }
       else putInst(pk.type, _v, G.t*2.2 + pk.pos.z, 1.45);
     }
@@ -493,11 +576,65 @@ function drawWorld(dt){
   puffs.count = n; puffs.instanceMatrix.needsUpdate = true;
 }
 
+// ======================= top view: an old-school overhead racer =======================
+// Only left/right steering. The stork holds its own altitude: tall things (big houses, trees, the church,
+// windmills, balloons, crows) are walls to steer around, low things (clotheslines, small cottages, haystacks)
+// are hopped over automatically, and pickups float at flying height.
+const WALL_KITS = new Set(['kit_house_a', 'kit_house_b', 'kit_tree_round', 'kit_tree_pine', 'kit_church', 'kit_windmill']);
+const isWall = it => WALL_KITS.has(it.kit) && !it.goal;
+function colDistXZ(c, p){
+  if (c.t === 'sph') return Math.hypot(p.x - c.c.x, p.z - c.c.z) - c.r;
+  if (c.t === 'cap'){
+    const ax = c.a.x, az = c.a.z, bx = c.b.x - ax, bz = c.b.z - az, l = bx*bx + bz*bz;
+    const t = l > 1e-6 ? Math.max(0, Math.min(1, ((p.x - ax)*bx + (p.z - az)*bz)/l)) : 0;
+    return Math.hypot(p.x - ax - bx*t, p.z - az - bz*t) - c.r;
+  }
+  return Math.hypot(Math.max(c.min.x - p.x, 0, p.x - c.max.x), Math.max(c.min.z - p.z, 0, p.z - c.max.z));
+}
+const colTop = c => c.t === 'sph' ? c.c.y + c.r : c.t === 'cap' ? Math.max(c.a.y, c.b.y) + c.r : c.max.y;
+let topRing = null;
+function findTopRing(){
+  topRing = null;
+  for (const ch of chunks.values()){ const dv = ch.delivery;
+    if (dv && !dv.done && dv.ring.z > G.p.z - 2 && (!topRing || dv.ring.z < topRing.z)) topRing = dv.ring; }
+}
+// flying height of the overhead layer at (x, z): cruise height over the ground, rising to the delivery ring
+function layerY(x, z){
+  let y = groundH(x, z) + TUNE.topCruise;
+  if (topRing){ const k = smoothstep(75, 30, topRing.z - z); y += Math.max(0, topRing.y - y)*k; }
+  return y;
+}
+const _ahead = new THREE.Vector3();
+function topTargetY(){
+  let y = layerY(G.p.x, G.p.z + 4);
+  for (const ch of chunks.values()){
+    if (Math.abs(ch.z0 + CH/2 - G.p.z) > CH) continue;
+    for (const it of ch.statics){
+      if (isWall(it) || it.pos.z < G.p.z - 6 || it.pos.z > G.p.z + 24) continue;
+      for (const c of it.cols) for (let a = -2; a <= 18; a += 2.5){
+        _ahead.set(G.p.x, 0, G.p.z + a);
+        if (colDistXZ(c, _ahead) < 1.7){ y = Math.max(y, colTop(c) + 1.3); break; }
+      }
+    }
+  }
+  return y;
+}
+function pickupBlocked(ch, pk){
+  if (pk.wall === undefined) pk.wall = ch.statics.some(it => isWall(it) && it.cols.some(c => colDistXZ(c, pk.pos) < 1.2))
+    || ch.windmills.some(w => Math.abs(pk.pos.z - w.hub.z) < 2.5 && Math.abs(pk.pos.x - w.hub.x) < 8);
+  return pk.wall;
+}
+// top view floats balloons down so the envelope sits at flying height instead of filling the screen
+const balloonBase = b => (VIEW.top ? layerY(b.pos.x, b.pos.z) - 5.4 : b.baseY) + Math.sin(G.t*0.7 + b.ph)*1.2;
+
 // ======================= gameplay =======================
 function hitTest(p, r){
   for (const ch of chunks.values()){
     if (Math.abs(ch.z0 + CH/2 - p.z) > CH) continue;
-    for (const it of ch.statics) for (const c of it.cols) if (colDist(c, p) < r) return it.kit;
+    for (const it of ch.statics){
+      const wall = VIEW.top && isWall(it);   // top view: tall things are walls, whatever the height
+      for (const c of it.cols) if ((wall ? colDistXZ(c, p) : colDist(c, p)) < r) return it.kit;
+    }
     for (const w of ch.windmills){
       if (Math.abs(w.hub.z - p.z) > 3) continue;
       for (let k = 0; k < 4; k++){
@@ -506,10 +643,10 @@ function hitTest(p, r){
       }
     }
     for (const b of ch.balloons){
-      _v.set(b.pos.x, b.baseY + Math.sin(G.t*0.7 + b.ph)*1.2 + 5.0, b.pos.z);
-      if (p.distanceTo(_v) < 2.8 + r) return 'kit_balloon';
+      _v.set(b.pos.x, balloonBase(b) + 5.0, b.pos.z);
+      if ((VIEW.top ? Math.hypot(p.x - _v.x, p.z - _v.z) : p.distanceTo(_v)) < 2.8 + r) return 'kit_balloon';
     }
-    for (const c of ch.crows) if (p.distanceTo(c.pos) < 0.5 + r) return 'kit_crow';
+    for (const c of ch.crows) if ((VIEW.top ? Math.hypot(p.x - c.pos.x, p.z - c.pos.z) : p.distanceTo(c.pos)) < 0.5 + r) return 'kit_crow';
   }
   return null;
 }
@@ -539,14 +676,16 @@ function gameplay(dt){
     }
   }
   for (const ch of chunks.values()) for (const s of ch.smokes){
-    if (Math.abs(s.p.z - G.p.z) < 1.8 && Math.abs(s.p.x - G.p.x) < 1.8 && G.p.y > s.p.y - 0.5 && G.p.y < s.p.y + 6){
+    if (Math.abs(s.p.z - G.p.z) < 1.8 && Math.abs(s.p.x - G.p.x) < 1.8 && (VIEW.top || (G.p.y > s.p.y - 0.5 && G.p.y < s.p.y + 6))){
       kickBaby(new THREE.Vector3((Math.random()-0.5)*3, (Math.random()-0.5)*2, 0)); if (Math.random() < dt*3) toast('Smoky!', 0.6);
     }
   }
   for (const ch of chunks.values()) for (const pk of ch.pickups){
-    if (pk.taken) continue;
+    if (pk.taken || (VIEW.top && pickupBlocked(ch, pk))) continue;
     if (pk.pos.z < G.p.z - 3){ if (!pk.counted && pk.type === 'kit_feather'){ pk.counted = true; G.featherTotal++; } continue; }
-    if (G.p.distanceTo(pk.pos) < 1.6 || (com && com.distanceTo(pk.pos) < 1.1)){
+    const got = VIEW.top ? Math.hypot(G.p.x - pk.pos.x, G.p.z - pk.pos.z) < 1.6 || (com && Math.hypot(com.x - pk.pos.x, com.z - pk.pos.z) < 1.1)
+                         : G.p.distanceTo(pk.pos) < 1.6 || (com && com.distanceTo(pk.pos) < 1.1);
+    if (got){
       pk.taken = true;
       if (pk.type === 'kit_feather'){ G.feathers++; G.featherTotal++; pk.counted = true; G.score += 10; G.sleep = Math.min(100, G.sleep + TUNE.featherCalm); G.soothe = 0.6; featherBurst(pk.pos); }
       else if (pk.type === 'kit_bottle'){ G.sleep = Math.min(100, G.sleep + TUNE.bottleGain); G.score += 25; toast('Mmm, milk'); }
@@ -566,7 +705,7 @@ function gameplay(dt){
     const dv = ch.delivery; if (!dv || dv.done) continue;
     if (G.p.z >= dv.ring.z){
       dv.done = true;
-      const off = Math.hypot(G.p.x - dv.ring.x, G.p.y - dv.ring.y);
+      const off = VIEW.top ? Math.abs(G.p.x - dv.ring.x) : Math.hypot(G.p.x - dv.ring.x, G.p.y - dv.ring.y);
       if (off < 3.4){
         G.score += 500 + Math.round(G.sleep*3);
         if (G.mode === 'level'){ finish(true, G.sleep > 70 ? 'Dropped right down the chimney, and the baby never woke up.' : 'Delivered, though the little one is a bit fussy.'); return; }
@@ -599,13 +738,25 @@ function setQuality(mode){
 function resize(width, height, force = false){
   if (!Number.isFinite(width + height) || width <= 0 || height <= 0) return;
   viewWidth = width; viewHeight = height;
-  const ratio = renderer.getPixelRatio();
-  if (!force && canvas.width === Math.floor(width * ratio) && canvas.height === Math.floor(height * ratio)) return;
-  renderer.setSize(width, height, false);
+  const pixel = RETRO.on ? RETRO.pixelSize : 1;
+  const ratio = RETRO.on ? 1 : renderer.getPixelRatio();
+  const targetW = Math.ceil(width / pixel), targetH = Math.ceil(height / pixel);
+  if (!force && canvas.width === Math.floor(targetW * ratio) && canvas.height === Math.floor(targetH * ratio)) return;
+  if (RETRO.on) renderer.setPixelRatio(1); else renderer.setPixelRatio(PRESETS[qualityLevel].dpr);
+  renderer.setSize(targetW, targetH, false);
+  const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+  retroRT.setSize(size.x, size.y); OUTLINE.res.value.copy(size);
+  OUTLINE.px.value = RETRO.on ? 1 : 2.2 * renderer.getPixelRatio();
+  setRetroPalette(RETRO.on && RETRO.palette !== 'full' ? RETRO.palette : 'none');
+  retroMat.uniforms.uDither.value = RETRO.dither ? 1 : 0;
   camera.aspect = width / height;
   // keep roughly a 70° horizontal view so a portrait screen still sees both sides of the street
   const vfov = THREE.MathUtils.radToDeg(2*Math.atan(Math.tan(THREE.MathUtils.degToRad(35))/camera.aspect));
-  camera.fov = THREE.MathUtils.clamp(vfov, 55, 84);
+  chaseFov = THREE.MathUtils.clamp(vfov, 55, 84);
+  // top view: about 58° across, enough to see both rows of houses on a portrait screen
+  topFov = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2*Math.atan(Math.tan(THREE.MathUtils.degToRad(29))/camera.aspect)), 50, 80);
+  topNear = THREE.MathUtils.clamp(Math.sqrt(camera.aspect / 1.2), 0.72, 1);
+  camera.fov = VIEW.top ? topFov : chaseFov;
   camera.updateProjectionMatrix();
 }
 
@@ -616,10 +767,12 @@ function input(){
   if (keys.has('up')) iy += 1;
   if (keys.has('down')) iy -= 1;
   if (steerInput.active){ ix += steerInput.x; iy += steerInput.y; }
+  if (VIEW.top) iy = 0;   // overhead racer: left and right only
   // screen-left is world +x because the camera looks down +z
   return [-THREE.MathUtils.clamp(ix, -1, 1), THREE.MathUtils.clamp(iy, -1, 1)];
 }
 
+const camLook = new THREE.Vector3(0, 10, 8);
 function update(deltaMs){
   if (loading || loadError || disposed) return;
   const rdt = Math.min(Math.max(deltaMs, 0) / 1000, 1/20);
@@ -636,7 +789,11 @@ function update(deltaMs){
     const [ix, iy] = input();
     G.speed = Math.min(TUNE.speedMax, TUNE.speedStart + G.dist/TUNE.speedRamp);
     G.vx += (ix*TUNE.steerX - G.vx)*Math.min(1, dt*TUNE.steerResponse);
-    G.vy += (iy*TUNE.steerY - G.vy)*Math.min(1, dt*TUNE.steerResponse);
+    if (VIEW.top){
+      findTopRing();
+      const vyT = THREE.MathUtils.clamp((topTargetY() - G.p.y)*2.4, -5, 9);
+      G.vy += (vyT - G.vy)*Math.min(1, dt*4);
+    } else G.vy += (iy*TUNE.steerY - G.vy)*Math.min(1, dt*TUNE.steerResponse);
     G.p.x = THREE.MathUtils.clamp(G.p.x + G.vx*dt, -10, 10);
     G.p.y = THREE.MathUtils.clamp(G.p.y + G.vy*dt, 2.2, 21);
     const gh = groundH(G.p.x, G.p.z) + 1.7; if (G.p.y < gh){ G.p.y = gh; G.vy = Math.max(0, G.vy); }
@@ -655,7 +812,8 @@ function update(deltaMs){
   if (dt > 0) updateBaby(dt);
   for (const ch of chunks.values()){
     for (const w of ch.windmills) w.ang += w.spd*dt;
-    for (const c of ch.crows){ c.pos.z -= c.spd*dt; c.pos.x += Math.sin(G.t*1.3 + c.ph)*c.wob*dt; c.pos.y += Math.cos(G.t*1.7 + c.ph)*0.4*dt; }
+    for (const c of ch.crows){ c.pos.z -= c.spd*dt; c.pos.x += Math.sin(G.t*1.3 + c.ph)*c.wob*dt; c.pos.y += Math.cos(G.t*1.7 + c.ph)*0.4*dt;
+      if (VIEW.top) c.pos.y += (layerY(c.pos.x, c.pos.z) + 0.3*Math.sin(G.t*1.7 + c.ph) - c.pos.y)*Math.min(1, dt*3); }
     for (const s of ch.smokes){ s.t -= dt; if (s.t <= 0 && Math.abs(s.p.z - G.p.z) < 90){ s.t = 0.8; puffList.push({ pos: s.p.clone(), age: 0 }); } }
   }
   if (playing) gameplay(dt);
@@ -666,9 +824,17 @@ function update(deltaMs){
   const camT = G.phase === 'menu'
     ? new THREE.Vector3(G.p.x*0.5 + 5*Math.sin(G.t*0.2), G.p.y + 1.5, G.p.z - 7.5)
     : new THREE.Vector3(G.p.x*0.92, G.p.y + TUNE.camUp, G.p.z - TUNE.camBack);
-  camera.position.lerp(camT, Math.min(1, rdt*5));
+  const lookT = new THREE.Vector3(G.p.x*0.95, G.p.y - 0.1, G.p.z + 8);
+  if (VIEW.top){
+    const cx = G.p.x*0.6 + roadX(G.p.z + TUNE.topAhead)*0.25;
+    camT.set(cx, G.p.y + TUNE.topCamUp*topNear, G.p.z - TUNE.topCamBack*topNear); lookT.set(cx, G.p.y - 4*topNear, G.p.z + TUNE.topAhead*topNear);
+  }
+  const camK = Math.min(1, rdt*(VIEW.top ? 4 : 5));
+  camera.position.lerp(camT, camK); camLook.lerp(lookT, camK);
+  const fovT = VIEW.top ? topFov : chaseFov;
+  if (Math.abs(camera.fov - fovT) > 0.05){ camera.fov += (fovT - camera.fov)*Math.min(1, rdt*4); camera.updateProjectionMatrix(); }
   camera.position.x += (Math.random()-0.5)*shake; camera.position.y += (Math.random()-0.5)*shake;
-  camera.lookAt(G.p.x*0.95, G.p.y - 0.1, G.p.z + 8);
+  camera.lookAt(camLook);
   sky.position.copy(camera.position);
   sun.position.set(G.p.x + 25, G.p.y + 60, G.p.z - 20); sun.target.position.set(G.p.x, 0, G.p.z + 10);
 }
@@ -689,7 +855,21 @@ const _scr = new THREE.Vector3();
 setQuality(quality);
 return {
   canvas, update, setQuality,
-  render(width, height){ resize(width, height); if (!loading && !loadError) renderer.render(scene, camera); },
+  render(width, height){
+    resize(width, height);
+    if (loading || loadError) return;
+    if (RETRO.on && (RETRO.pixelSize > 1 || RETRO.palette !== 'full')) renderRetro(scene, camera); else renderer.render(scene, camera);
+  },
+  setView(next){
+    if (next !== 'chase' && next !== 'top') throw new RangeError('Unknown baby-delivery view: ' + next);
+    VIEW.top = next === 'top';
+  },
+  setRetro(options){
+    const next = { ...RETRO, ...options };
+    validateRetro(next);
+    Object.assign(RETRO, next);
+    resize(viewWidth, viewHeight, true);
+  },
   start(mode = 'level'){
     if (loading || loadError) return;
     if (mode !== 'level' && mode !== 'endless') throw new RangeError('Unknown baby-delivery mode: ' + mode);
@@ -712,7 +892,7 @@ return {
       distance: Math.round(G.dist), goal: TUNE.goal, feathers: G.feathers, score: Math.round(G.score),
       sleep: Math.max(0, G.sleep), soothing: G.soothe > 0, lullaby: Math.max(0, G.lullaby), notes: G.notes,
       toast: toastT > 0 ? toastText : '', toastAlpha: Math.max(0, Math.min(1, toastT*4)),
-      floaters: fl, result: G.result, qualityLevel,
+      floaters: fl, result: G.result, qualityLevel, retro: { ...RETRO }, view: VIEW.top ? 'top' : 'chase',
     };
   },
   key(key, down){
@@ -735,6 +915,7 @@ return {
     for (const m of [kitMat, groundMat, waterMat, ...outlineMats]) m.dispose();
     gradTex.dispose();
     try { actx?.close(); } catch (e) { /* ignore */ }
+    retroRT.dispose(); retroMat.dispose();
     renderer.dispose();
     renderer.forceContextLoss();
   },

@@ -26,7 +26,7 @@ describe('Baby delivery runtime', () => {
   afterEach(() => runtime?.dispose());
 
   it('loads its models and flies a steerable, pausable level run', async () => {
-    runtime = createBabyDelivery({ quality: 'medium', sound: false });
+    runtime = createBabyDelivery({ quality: 'medium', sound: false, retro: { on: false } });
     await loaded(runtime);
     const ready = runtime.status();
     expect(ready.loading).withContext(ready.error).toBeFalse();
@@ -65,6 +65,38 @@ describe('Baby delivery runtime', () => {
     runtime.start('endless');
     expect(runtime.status().mode).toBe('endless');
     expect(runtime.status().distance).toBe(0);
+  });
+
+  it('renders at a fraction of the screen resolution in retro mode', async () => {
+    runtime = createBabyDelivery({ quality: 'medium', sound: false });
+    await loaded(runtime);
+    expect(runtime.status().retro).toEqual({ on: true, pixelSize: 3, palette: 'village', dither: true });
+    runtime.render(360, 640);
+    expect(runtime.canvas.width).toBe(120);
+    expect(runtime.canvas.height).toBe(214);
+    runtime.setRetro({ pixelSize: 4, palette: 'handheld' });
+    runtime.render(360, 640);
+    expect(runtime.canvas.width).toBe(90);
+    expect(runtime.canvas.height).toBe(160);
+    expect(() => runtime.setRetro({ pixelSize: 0 })).toThrowError(RangeError);
+    runtime.setRetro({ on: false });
+    runtime.render(360, 640);
+    expect(runtime.canvas.width).toBe(360);
+  });
+
+  it('switches to the overhead view, where only left and right steer', async () => {
+    runtime = createBabyDelivery({ quality: 'medium', sound: false, retro: { on: false } });
+    await loaded(runtime);
+    expect(runtime.status().view).toBe('chase');
+    runtime.setView('top');
+    expect(runtime.status().view).toBe('top');
+    runtime.start('level');
+    runtime.update(16);
+    runtime.key('up', true);
+    for (let i = 0; i < 30; i++) runtime.update(50);
+    runtime.key('up', false);
+    expect(runtime.status().phase).toBe('play');
+    expect(() => runtime.setView('side' as never)).toThrowError(RangeError);
   });
 });
 

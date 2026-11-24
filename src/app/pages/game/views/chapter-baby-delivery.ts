@@ -1,8 +1,10 @@
 import {
   BabyDeliveryMode,
   BabyDeliveryQuality,
+  BabyDeliveryRetro,
   BabyDeliveryRuntime,
   BabyDeliveryStatus,
+  BabyDeliveryView,
   createBabyDelivery,
 } from './baby-delivery-runtime';
 import { ScreenView, ViewFrame, ViewPointer } from './view';
@@ -43,7 +45,7 @@ export const BABY_DELIVERY_HUD = {
   dragRange: 9,
 };
 
-type CardButton = 'start-level' | 'start-endless' | 'again' | 'endless' | 'menu';
+type CardButton = 'start-level' | 'start-endless' | 'camera' | 'again' | 'endless' | 'menu';
 
 /** The stork flies the newborn to its new home: a 3D runner drawn into the glass surface. */
 export class ChapterBabyDelivery implements ScreenView {
@@ -57,7 +59,11 @@ export class ChapterBabyDelivery implements ScreenView {
     character: 'assets/e-ink/life-stages/age-0-crane-baby.png',
   };
   readonly quality: BabyDeliveryQuality = 'auto';
+  /** Retro pixel-art look for the 3D scene. */
+  readonly retro: Partial<BabyDeliveryRetro> = { on: true, pixelSize: 3, palette: 'village', dither: true };
 
+  /** Camera choice, kept while the app is open: chase, or the overhead racer view (left/right only). */
+  private view: BabyDeliveryView = 'chase';
   private runtime: BabyDeliveryRuntime | null = null;
   private delivered = false;
   private error = '';
@@ -85,7 +91,7 @@ export class ChapterBabyDelivery implements ScreenView {
       return;
     }
     try {
-      this.runtime = createBabyDelivery({ quality: this.quality });
+      this.runtime = createBabyDelivery({ quality: this.quality, retro: this.retro, view: this.view });
     } catch (error) {
       this.error = error instanceof Error ? error.message : 'Could not start the 3D scene.';
     }
@@ -169,6 +175,11 @@ export class ChapterBabyDelivery implements ScreenView {
 
   private activate(button: CardButton | undefined): void {
     if (!button || !this.runtime) return;
+    if (button === 'camera') {
+      this.view = this.view === 'top' ? 'chase' : 'top';
+      this.runtime.setView(this.view);
+      return;
+    }
     this.selection = 0;
     if (button === 'menu') {
       this.runtime.menu();
@@ -185,7 +196,7 @@ export class ChapterBabyDelivery implements ScreenView {
   }
 
   private buttonsFor(status: BabyDeliveryStatus): CardButton[] {
-    if (status.phase === 'menu') return ['start-level', 'start-endless'];
+    if (status.phase === 'menu') return ['start-level', 'start-endless', 'camera'];
     if (status.phase === 'end') {
       return status.result?.success && status.mode === 'level'
         ? ['again', 'endless']
@@ -206,7 +217,11 @@ export class ChapterBabyDelivery implements ScreenView {
     ctx.fillRect(0, 0, width, height);
     if (this.runtime) {
       this.runtime.render(width, height);
+      // keep the retro pixels square and sharp when scaling up to the glass surface
+      const smoothing = ctx.imageSmoothingEnabled;
+      ctx.imageSmoothingEnabled = !this.runtime.status().retro.on;
       ctx.drawImage(this.runtime.canvas, 0, 0, width, height);
+      ctx.imageSmoothingEnabled = smoothing;
     }
     const status = this.runtime?.status();
     if (this.error || !status || status.loading || status.error) {
@@ -397,7 +412,7 @@ export class ChapterBabyDelivery implements ScreenView {
       'Fly the bundle to its new home and drop it through the golden ring above the chimney. Feathers soothe the baby.',
       Math.min(width * 0.88, unit * 50) - unit * 6,
     );
-    const cardHeight = unit * (16 + blurb.length * 3.6 + 17);
+    const cardHeight = unit * (16 + blurb.length * 3.6 + 25);
     const top = Math.max(height * 0.64 - cardHeight / 2, unit * 22);
     const { x, w } = this.card(frame, top, cardHeight);
     ctx.fillStyle = BABY_DELIVERY_HUD.ink;
@@ -413,6 +428,7 @@ export class ChapterBabyDelivery implements ScreenView {
       [
         ['start-level', 'Deliver the baby · Level 1'],
         ['start-endless', 'Endless flight'],
+        ['camera', this.view === 'top' ? 'Camera: top view (← → only)' : 'Camera: chase'],
       ],
       x + unit * 3,
       top + unit * (13 + blurb.length * 3.6),
