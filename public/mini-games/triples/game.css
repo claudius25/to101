@@ -24,9 +24,14 @@ main[hidden] {
   width: min(100%, 330px);
   padding-bottom: 48px;
   text-align: center;
+  overflow-x: clip;
+  overflow-clip-margin: 12px;
 }
 .intro h1 {
   margin: 0 0 12px;
+}
+.intro h1:focus {
+  outline: none;
 }
 .intro-board {
   --intro-gap: 12px;
@@ -71,14 +76,6 @@ main[hidden] {
 .intro-board.matched #intro-source,
 .intro-board.matched .intro-partner {
   animation: intro-merge var(--clear-duration) ease-out both;
-}
-#intro-continue {
-  margin-top: 16px;
-  padding: 8px 14px;
-  border: 1px solid var(--empty-tile-border);
-  border-radius: 8px;
-  background: var(--empty-tile);
-  color: var(--text-light);
 }
 #intro-skip {
   position: fixed;

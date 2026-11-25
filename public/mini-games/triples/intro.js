@@ -6,7 +6,7 @@
   const source = intro.querySelector('#intro-source');
   const target = intro.querySelector('#intro-target');
   const bottomRight = intro.querySelector('#intro-bottom-right');
-  const continueButton = intro.querySelector('#intro-continue');
+  const lessonPanel = intro.querySelector('.intro-lesson');
   const skipButton = intro.querySelector('#intro-skip');
   const skipIntroKey = 'triples.skipIntro';
   const skipIntroThreshold = 5;
@@ -23,6 +23,7 @@
   let drag = null;
   let ignoreClick = false;
   let lesson = 1;
+  let completed = false;
   let cornerLayout;
 
   function selectTile(selected) {
@@ -63,9 +64,13 @@
       target.setAttribute('aria-label', 'Cleared space');
       if (intro.hidden) return;
     }
-    continueButton.textContent = lesson === 5 ? 'Continue to game' : 'Next lesson';
-    continueButton.hidden = false;
-    continueButton.focus();
+    if (lesson === 5) {
+      completed = true;
+      skipButton.textContent = 'PLAY';
+      skipButton.focus();
+    } else {
+      await advanceLesson();
+    }
   }
 
   function showCornerLesson() {
@@ -136,9 +141,7 @@
     target.classList.add('empty');
     showTileFace(target.firstElementChild);
     target.setAttribute('aria-label', 'Move selected tile here');
-    continueButton.hidden = true;
     title.textContent = heading;
-    title.focus();
   }
 
   source.addEventListener('pointerdown', (event) => {
@@ -210,14 +213,42 @@
     document.querySelector('main').hidden = false;
     if (focusPlay) document.querySelector('#shuffle').focus();
   }
-  continueButton.addEventListener('click', () => {
+  async function advanceLesson() {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    if (intro.hidden) return;
+
+    const distance = intro.clientWidth + 24;
+    if (!reducedMotion.matches) {
+      const exit = lessonPanel.animate(
+        [{ translate: '0' }, { translate: `${-distance}px` }],
+        { duration: 220, easing: 'ease-in', fill: 'forwards' },
+      );
+      await exit.finished;
+      exit.cancel();
+      if (intro.hidden) return;
+    }
+
     if (lesson === 1) showCornerLesson();
     else if (lesson === 2) showRouteLesson();
     else if (lesson === 3) showAbsorptionLesson();
-    else if (lesson === 4) showChainLesson();
-    else openGame();
-  });
+    else showChainLesson();
+
+    if (!reducedMotion.matches) {
+      lessonPanel.inert = true;
+      await lessonPanel.animate(
+        [{ translate: `${distance}px` }, { translate: '0' }],
+        { duration: 260, easing: 'ease-out' },
+      ).finished;
+      lessonPanel.inert = false;
+    }
+    if (!intro.hidden) title.focus({ preventScroll: true });
+  }
+
   skipButton.addEventListener('click', () => {
+    if (completed) {
+      openGame();
+      return;
+    }
     if (window.parent !== window) {
       window.parent.postMessage('triples:skip-intro', '*');
     } else {
