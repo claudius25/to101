@@ -1,7 +1,11 @@
 'use strict';
 
-const { rules, copy, art, families } = TRIPLES_SETTINGS;
-const { size, moveLimit } = rules;
+const { rules, copy, art, families, difficulty } = TRIPLES_SETTINGS;
+const { size } = rules;
+const difficultyBudgets = difficulty.levels.map(({ moveMultiplier }) =>
+  Math.max(1, Math.round(rules.moveLimit * moveMultiplier)),
+);
+let moveLimit = difficultyBudgets[difficulty.initialIndex];
 function countGroups(groupSize) {
   return Math.min(
     families.length,
@@ -12,8 +16,8 @@ function countGroups(groupSize) {
 if (
   !Number.isInteger(size) ||
   countGroups(3) < 1 ||
-  !Number.isInteger(moveLimit) ||
-  moveLimit < 1 ||
+  !Number.isInteger(rules.moveLimit) ||
+  rules.moveLimit < 1 ||
   !Number.isInteger(rules.minimumEmptyTiles) ||
   rules.minimumEmptyTiles < 1 ||
   !Number.isInteger(rules.shuffleSamples) ||
@@ -212,7 +216,6 @@ function shuffleInPlace(items) {
 function newBoard() {
   finishDrag();
   factPositions.clear();
-  mobileOrganDisplay.textContent = '';
   for (const finish of activeEffects) finish();
   groupSize = Number(groupSizeControl.value);
   groupCount = countGroups(groupSize);
@@ -296,6 +299,8 @@ function showOrganFact(index) {
     const position = factPositions.get(family.id) ?? 0;
     mobileOrganDisplay.textContent = family.facts[position];
     factPositions.set(family.id, (position + 1) % family.facts.length);
+  } else {
+    mobileOrganDisplay.textContent = '';
   }
 }
 
@@ -380,12 +385,12 @@ function play(index, route) {
     }
 
     if (merged === groupCount) {
-      result = copy.winTitle;
+      result = 'win';
     } else if (moves === moveLimit) {
-      result = copy.lossTitle;
+      result = 'loss';
       status.textContent = format(copy.loss, { limit: moveLimit });
     } else if (!cells.some((_, target) => canSlide(target))) {
-      result = copy.lossTitle;
+      result = 'loss';
       status.textContent = copy.stuck;
     }
   } else {
@@ -406,15 +411,14 @@ const buttons = Array.from({ length: size * size }, (_, index) => {
   face.className = 'tile-face';
   button.append(face);
   button.addEventListener('click', () => {
-    showOrganFact(index);
     play(index);
+    if (selected === index) showOrganFact(index);
   });
   board.append(button);
   return button;
 });
 
-function showTileFace(element, tile, index) {
-  const organ = tileLabels.get(index)?.organ;
+function showTileFace(element, tile, organ) {
   element.classList.toggle('black-piece', tile?.kind === 'black');
   element.classList.toggle('fixed-piece', tile?.kind === 'fixed');
   element.style.setProperty('--tile', tile?.color ?? '');
@@ -434,7 +438,7 @@ function prepareSlide(source, target, alreadyAtTarget) {
   face.className = 'sliding-tile';
   face.setAttribute('aria-hidden', 'true');
   const tile = tiles[cells[source]];
-  showTileFace(face, tile, source);
+  showTileFace(face, tile, tileLabels.get(source)?.organ);
   return {
     face,
     source: alreadyAtTarget ? target : source,
@@ -508,7 +512,7 @@ function animateSuction(target, captured, formationDelay, travelDuration) {
     const piece = document.createElement('span');
     piece.className = 'tile-face suction-piece';
     piece.setAttribute('aria-hidden', 'true');
-    showTileFace(piece, tiles.fixed, index);
+    showTileFace(piece, tiles.fixed);
     source.append(piece);
 
     const dx = destination.offsetLeft - source.offsetLeft;
@@ -566,7 +570,7 @@ function animateClear(index) {
   const overlay = document.createElement('span');
   overlay.className = 'clearing-tile';
   overlay.setAttribute('aria-hidden', 'true');
-  showTileFace(overlay, tile, index);
+  showTileFace(overlay, tile, tileLabels.get(index)?.organ);
 
   button.querySelector('.clearing-tile')?.remove();
   button.append(overlay);
@@ -582,8 +586,11 @@ function animateClear(index) {
 }
 
 function render() {
+  if (selected === null && !drag?.active) mobileOrganDisplay.textContent = '';
   boardResult.hidden = result === null;
-  boardResult.textContent = result ?? '';
+  boardResult.textContent = result ? copy[result === 'win' ? 'winTitle' : 'lossTitle'] : '';
+  if (result) board.dataset.result = result;
+  else delete board.dataset.result;
   moveCount.textContent = String(moveLimit - moves);
   const selectedTile = selected === null ? null : cells[selected];
   cells.forEach((tile, index) => {
@@ -603,7 +610,7 @@ function render() {
     button.classList.toggle('empty', tile === null);
     button.classList.toggle('fixed', tile === 'fixed');
     button.classList.toggle('partner', partner);
-    showTileFace(button.firstElementChild, style, index);
+    showTileFace(button.firstElementChild, style, tileLabels.get(index)?.organ);
     if (tile !== null && tile !== 'black') button.querySelector('.clearing-tile')?.remove();
     const label = tileLabels.get(index);
     const hideLabel = !label?.organ && index !== selected && !partner;
@@ -735,7 +742,7 @@ function startDrag(event) {
   const preview = document.createElement('div');
   preview.className = 'drag-tile';
   preview.setAttribute('aria-hidden', 'true');
-  showTileFace(preview, tile, drag.source);
+  showTileFace(preview, tile, tileLabels.get(drag.source)?.organ);
   preview.style.width = source.offsetWidth + 'px';
   preview.style.height = source.offsetHeight + 'px';
   source.classList.add('drag-source');
@@ -828,6 +835,26 @@ board.addEventListener(
   true,
 );
 
-shuffle.addEventListener('click', newBoard);
+const difficultyInput = document.querySelector('#difficulty');
+const difficultyCurrent = document.querySelector('#difficulty-current');
+const lastDifficultyIndex = difficulty.levels.length - 1;
+difficultyInput.max = lastDifficultyIndex;
+difficultyInput.value = difficulty.initialIndex;
+
+function showDifficulty() {
+  const index = difficultyInput.valueAsNumber;
+  const { label } = difficulty.levels[index];
+  difficultyInput.setAttribute('aria-valuetext', label);
+  difficultyInput.parentElement.style.setProperty('--difficulty-progress', `${index / lastDifficultyIndex * 100}%`);
+  difficultyCurrent.textContent = label;
+}
+
+difficultyInput.addEventListener('input', showDifficulty);
+showDifficulty();
+
+shuffle.addEventListener('click', () => {
+  moveLimit = difficultyBudgets[difficultyInput.valueAsNumber];
+  newBoard();
+});
 groupSizeControl.addEventListener('change', newBoard);
 newBoard();

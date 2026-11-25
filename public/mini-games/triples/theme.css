@@ -8,6 +8,7 @@
   --text-light: #f8f9ff;
   --text-dark: #101321;
   --text-muted: #d1cfe2;
+  --difficulty-accent: #b5d957;
   --tile-radius: 20%;
   --tile-depth: clamp(3px, 1vw, 8px);
   --tile-transition: 150ms ease-out;

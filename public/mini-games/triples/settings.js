@@ -46,8 +46,8 @@ const TRIPLES_SETTINGS = {
     blocked: 'That tile has no clear path to an empty square.',
     overBudget: 'That slide exceeds your remaining moves. Choose a closer space.',
     win: 'You matched all {groups} groups!',
-    winTitle: 'YOU WIN',
-    lossTitle: 'YOU LOSE',
+    winTitle: 'YOU WON',
+    lossTitle: 'YOU LOST',
     merged: 'Group merged.',
     moved: 'Tile moved.',
     grayMoved: 'Black tile absorbed a gray tile for {cost} extra moves.',
@@ -62,6 +62,16 @@ const TRIPLES_SETTINGS = {
     position: 'row {row}, column {column}',
     destination: 'available destination',
     matching: 'matching tile',
+  },
+  difficulty: {
+    initialIndex: 1,
+    levels: [
+      { label: 'Easy', moveMultiplier: 1.5 },
+      { label: 'Normal', moveMultiplier: 1 },
+      { label: 'Hard', moveMultiplier: 0.85 },
+      { label: 'Harder', moveMultiplier: 0.7 },
+      { label: 'Impossible', moveMultiplier: 0.55 },
+    ],
   },
   art: {
     black: {
