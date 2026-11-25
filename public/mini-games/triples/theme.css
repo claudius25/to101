@@ -10,7 +10,6 @@
   --text-muted: #d1cfe2;
   --tile-radius: 20%;
   --tile-depth: clamp(3px, 1vw, 8px);
-  --family-tile-inset: calc(100% / 6);
   --tile-transition: 150ms ease-out;
   --tile-lift: clamp(7px, 2vw, 16px);
   --page-padding: 24px 16px;
@@ -21,12 +20,9 @@
   --ui-font-size: 1rem;
   --ui-line-height: 1.45;
   --organ-font-weight: 400;
-  --label-line-height: 1;
-  --label-padding: 2px;
   --ui-font: system-ui, sans-serif;
   --title-size: clamp(2rem, 8vw, 3rem);
   --tile-font-size: clamp(0.7rem, 3vw, 1.4rem);
-  --label-font-size: clamp(0.43rem, 1.7vw, 0.78rem);
   --organ-font: 'Sigmar One', 'Arial Black', system-ui, sans-serif;
   --tile-font-weight: 650;
   --clear-duration: 260ms;
@@ -37,7 +33,5 @@
     --board-gap: clamp(8px, 1.25vw, 8px);
     --board-padding: 12px;
     --page-padding: 16px 8px;
-    --family-tile-inset: 10%;
-    --label-font-size: clamp(0.5rem, 2.2vw, 0.72rem);
   }
 }

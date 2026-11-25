@@ -11,4 +11,4 @@ Open the Angular route `/slide-and-match`. It loads this game in a sandboxed ifr
 | `theme.css` | Font import and families, font sizes, weights, gaps, margins, board width, colors, corners, active scale, and animation timings. |
 | `game.js`, `game.css`, `index.html` | Game rules, presentation selectors, and page structure. |
 
-The default 6×6 board selects 11 of the 20 families. Each family uses exactly three cells. After reserving a black tile and the configured minimum empty spaces, the game fits as many complete families as possible. Any remaining spaces stay empty. A slide that would exceed the move budget is blocked. Completing the final triple on the last move wins.
+The default 6×6 board fits 11 families in 3-tile mode and 8 in 4-tile mode. Changing Group size starts a fresh board. After reserving a black tile and the configured minimum empty spaces, the game fits as many complete families as possible. Any remaining spaces stay empty. A slide that would exceed the move budget is blocked. Completing the final group on the last move wins.

@@ -1,16 +1,16 @@
-// See README.md for editing the rules, copy, families, and SVG art.
+// See README.md for editing the rules, copy, families, and organ artwork.
 const TILE_COLORS = {
-  heart: '#D7898B',
-  brain: '#14C5D9',
-  lung: '#3D9240',
-  liver: '#F2C53D',
-  kidney: '#F65936',
-  stomach: '#0A04BF',
-  pancreas: '#C00358',
-  spleen: '#541848',
-  skin: '#58150D',
-  largeIntestine: '#F6F5F0',
-  bladder: '#789C8E',
+  heart: '#B5D957',
+  brain: '#88DFF2',
+  lung: '#5E1742',
+  liver: '#28A779',
+  kidney: '#FFCE00',
+  stomach: '#367DCE',
+  pancreas: '#28734D',
+  spleen: '#304B96',
+  skin: '#192C50',
+  largeIntestine: '#FFF5E5',
+  bladder: '#C92600',
 };
 
 const TRIPLES_SETTINGS = {
@@ -25,6 +25,7 @@ const TRIPLES_SETTINGS = {
     similarColorDistance: 0.24,
     diagonalColorWeight: 0.35,
     dragThreshold: 6,
+    touchReleasePadding: 24,
     clearAnimationTimeoutMs: 300,
   },
   copy: {
@@ -36,19 +37,19 @@ const TRIPLES_SETTINGS = {
     newBoard: 'New board',
     reference: 'Organ, condition, and care reference',
     source: 'Source',
-    score: '{merged} / {groups} triples matched',
+    score: '{merged} / {groups} groups matched',
     board: '{size} by {size} game board',
-    roles: ['Organ', 'Condition', 'Care option'],
+    roles: ['Organ', 'Condition', 'Care option', 'Organ name'],
     ready: '',
     fixed: 'Gray tiles are fixed in place.',
     deselected: 'Tile deselected.',
     chooseEmpty: 'Choose an empty space.',
     blocked: 'That tile has no clear path to an empty square.',
     overBudget: 'That slide exceeds your remaining moves. Choose a closer space.',
-    win: 'You matched all {groups} triples!',
+    win: 'You matched all {groups} groups!',
     winTitle: 'YOU WIN',
     lossTitle: 'YOU LOSE',
-    merged: 'Triple merged.',
+    merged: 'Group merged.',
     moved: 'Tile moved.',
     grayMoved: 'Black tile absorbed a gray tile for {cost} extra moves.',
     grayChain: 'Black tile absorbed {count} gray tiles for {cost} extra moves.',
@@ -70,16 +71,16 @@ const TRIPLES_SETTINGS = {
     fixed: {
       color: '#a2a5b2',
     },
-    leftX: 32,
-    leftHeight: 172,
-    organMaxFont: 41,
-    bottomY: 237,
-    bottomWidth: 228,
   },
   families: [
     {
       id: 'group-1',
       organ: 'Heart',
+      facts: [
+        'Closing valves make the familiar lub-dub sound.',
+        'The left ventricle pumps blood to most of your body.',
+        'The right ventricle sends blood to your lungs.',
+      ],
       condition: 'Rhythm Regulator',
       care: 'POTASSIUM',
       source:
@@ -88,13 +89,16 @@ const TRIPLES_SETTINGS = {
       tileColor: TILE_COLORS.heart,
       art: {
         image: 'heart.png',
-        leftText: 'HE',
-        bottomText: 'ART',
       },
     },
     {
       id: 'group-2',
       organ: 'Brain',
+      facts: [
+        'The cerebellum helps coordinate movements like playing piano.',
+        'A thick bundle of nerve fibers connects the two hemispheres.',
+        'The brainstem helps control automatic breathing.',
+      ],
       condition: 'neuronal membranes',
       care: 'Omega3-DHA',
       source: 'https://www.nccih.nih.gov/health/peppermint-oil',
@@ -102,13 +106,16 @@ const TRIPLES_SETTINGS = {
       tileColor: TILE_COLORS.brain,
       art: {
         image: 'brain.png',
-        leftText: 'BR',
-        bottomText: 'AIN',
       },
     },
     {
       id: 'group-3',
       organ: 'Lung',
+      facts: [
+        'Your right lung has three lobes. Your left has two.',
+        'Oxygen enters your blood through tiny air sacs called alveoli.',
+        'Your diaphragm flattens when you breathe in.',
+      ],
       condition: 'Oxygen Transport',
       care: 'IRON',
       source: 'https://www.ema.europa.eu/en/medicines/herbal/althaeae-radix',
@@ -116,26 +123,32 @@ const TRIPLES_SETTINGS = {
       tileColor: TILE_COLORS.lung,
       art: {
         image: 'lungs.png',
-        leftText: 'LU',
-        bottomText: 'NG',
       },
     },
     {
       id: 'group-4',
       organ: 'Liver',
+      facts: [
+        'The liver makes bile to help digest fats.',
+        'The gallbladder stores bile made by the liver.',
+        'The liver receives blood from both an artery and a vein.',
+      ],
       condition: '	Glutathione Synthesis',
       care: 'CYSTEINE',
       source: 'https://www.nhs.uk/conditions/gilberts-syndrome/',
       tileColor: TILE_COLORS.liver,
       art: {
         image: 'liver.png',
-        leftText: 'LI',
-        bottomText: 'VER',
       },
     },
     {
       id: 'group-5',
       organ: 'Kidney',
+      facts: [
+        'Each kidney contains about a million tiny filters called nephrons.',
+        'Your kidneys make urine by removing waste and extra water.',
+        'Each kidney is roughly the size of a fist.',
+      ],
       condition: 'Electrolyte Balance',
       care: 'MAGNESIUM',
       source: 'https://www.niddk.nih.gov/health-information/kidney-disease/simple-kidney-cysts',
@@ -143,13 +156,16 @@ const TRIPLES_SETTINGS = {
       tileColor: TILE_COLORS.kidney,
       art: {
         image: 'kidneys.png',
-        leftText: 'KID',
-        bottomText: 'NEY',
       },
     },
     {
       id: 'group-6',
       organ: 'Stomach',
+      facts: [
+        'Folds in your stomach lining flatten as it fills.',
+        'A layer of mucus helps protect your stomach from its own acid.',
+        'Stomach acid activates pepsin, which helps break down proteins.',
+      ],
       condition: 'Gastric Acid Production',
       care: 'CHLORIDE',
       source: 'https://www.ema.europa.eu/en/documents/herbal-summary/ginger-summary-public_en.pdf',
@@ -157,13 +173,16 @@ const TRIPLES_SETTINGS = {
       tileColor: TILE_COLORS.stomach,
       art: {
         image: 'stomach.png',
-        leftText: 'STO',
-        bottomText: 'MACH',
       },
     },
     {
       id: 'group-7',
       organ: 'Pancreas',
+      facts: [
+        'The pancreas sits mostly behind the stomach.',
+        'The pancreas makes insulin to help lower blood sugar.',
+        'Pancreatic enzymes help digest fats, proteins, and starches.',
+      ],
       condition: 'Insulin Synthesis',
       care: 'ZINC',
       source: 'https://www.cdc.gov/diabetes/treatment/treatment-low-blood-sugar-hypoglycemia.html',
@@ -171,13 +190,16 @@ const TRIPLES_SETTINGS = {
       tileColor: TILE_COLORS.pancreas,
       art: {
         image: 'pancreas.png',
-        leftText: 'PAN',
-        bottomText: 'CREAS',
       },
     },
     {
       id: 'group-8',
       organ: 'Spleen',
+      facts: [
+        'The spleen filters worn-out red blood cells from the blood.',
+        'The spleen sits high on the left side of your abdomen.',
+        'One part of the spleen is called white pulp and helps fight infection.',
+      ],
       condition: 'Red Blood Cell Formation',
       care: 'FOLATE (B9)',
       source: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC10396346/',
@@ -185,13 +207,16 @@ const TRIPLES_SETTINGS = {
       tileColor: TILE_COLORS.spleen,
       art: {
         image: 'spleen.png',
-        leftText: 'SPL',
-        bottomText: 'EEN',
       },
     },
     {
       id: 'group-9',
       organ: 'Skin',
+      facts: [
+        'Skin is the largest organ in your body.',
+        'Sweat cools you as it evaporates from your skin.',
+        'Melanin helps protect your skin from ultraviolet radiation.',
+      ],
       condition: 'Collagen Synthesis',
       care: 'VITAMIN C',
       source: 'https://www.aad.org/public/diseases/eczema/childhood/itch-relief/home-remedies',
@@ -200,13 +225,16 @@ const TRIPLES_SETTINGS = {
       // tileColor: '#A68160',
       art: {
         image: 'skin.png',
-        leftText: 'SK',
-        bottomText: 'IN',
       },
     },
     {
       id: 'group-10',
       organ: 'Bladder',
+      facts: [
+        'Your bladder expands as it fills with urine.',
+        'Two muscular tubes called ureters carry urine to your bladder.',
+        'When you pee, the bladder muscle squeezes to push urine out.',
+      ],
       condition: 'Muscle Contraction',
       care: 'CALCIUM',
       source: 'https://www.nccih.nih.gov/health/cranberry',
@@ -214,13 +242,16 @@ const TRIPLES_SETTINGS = {
       tileColor: TILE_COLORS.bladder,
       art: {
         image: 'bladder.png',
-        leftText: 'BLA',
-        bottomText: 'DDER',
       },
     },
     {
       id: 'group-11',
       organ: 'Large\nintestine',
+      facts: [
+        'The large intestine absorbs water as waste becomes stool.',
+        'The appendix is part of the large intestine.',
+        'Bacteria in the large intestine help make vitamin K.',
+      ],
       condition: 'Butyrate\nProduction',
       care: 'SOLUBLE FIBER',
       source:
@@ -228,8 +259,6 @@ const TRIPLES_SETTINGS = {
       tileColor: TILE_COLORS.largeIntestine,
       art: {
         image: 'intestines.png',
-        leftText: 'LARGE',
-        bottomText: 'INTESTINE',
       },
     },
   ],
