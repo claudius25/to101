@@ -241,9 +241,6 @@ button {
     opacity: 0;
   }
 }
-.cell.destination {
-  border: 2px dashed var(--text-muted);
-}
 .cell.partner {
   z-index: 1;
 }

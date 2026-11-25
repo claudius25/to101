@@ -601,7 +601,6 @@ function render() {
       index !== selected;
     button.className = 'cell';
     button.classList.toggle('empty', tile === null);
-    button.classList.toggle('destination', destination);
     button.classList.toggle('fixed', tile === 'fixed');
     button.classList.toggle('partner', partner);
     showTileFace(button.firstElementChild, style, index);
