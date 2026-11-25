@@ -21,7 +21,6 @@
   --ui-line-height: 1.45;
   --organ-font-weight: 400;
   --ui-font: system-ui, sans-serif;
-  --title-size: clamp(2rem, 8vw, 3rem);
   --tile-font-size: clamp(0.7rem, 3vw, 1.4rem);
   --organ-font: 'Sigmar One', 'Arial Black', system-ui, sans-serif;
   --tile-font-weight: 650;

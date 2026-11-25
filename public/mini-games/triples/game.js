@@ -41,13 +41,10 @@ function plainLabel(text) {
 }
 
 document.title = copy.title;
-document.querySelector('#game-title').textContent = copy.title;
 const instructions = document.querySelector('#instructions');
 const mobileOrganDisplay = document.querySelector('#mobile-organ-display');
 mobileOrganDisplay.hidden = size < 4;
 const factPositions = new Map();
-document.querySelector('#moves-label').textContent = copy.moveLabel;
-document.querySelector('#move-limit').textContent = String(moveLimit);
 // document.querySelector('#reference-title').textContent = copy.reference;
 
 const reference = document.querySelector('#reference');
@@ -115,11 +112,12 @@ const board = document.querySelector('#board');
 const boardResult = document.querySelector('#board-result');
 document.querySelector('main').style.setProperty('--size', size);
 board.setAttribute('aria-label', format(copy.board, { size }));
-const score = document.querySelector('#score');
 const moveCount = document.querySelector('#move-count');
+document.querySelector('#moves-label').textContent = copy.moveLabel;
 const status = document.querySelector('#status');
 const shuffle = document.querySelector('#shuffle');
-shuffle.textContent = copy.newBoard;
+shuffle.setAttribute('aria-label', copy.newBoard);
+shuffle.title = copy.newBoard;
 const groupSizeControl = document.querySelector('#group-size');
 groupSizeControl.querySelector('option[value="4"]').disabled = countGroups(4) < 1;
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -586,8 +584,7 @@ function animateClear(index) {
 function render() {
   boardResult.hidden = result === null;
   boardResult.textContent = result ?? '';
-  score.textContent = format(copy.score, { merged, groups: groupCount });
-  moveCount.textContent = String(moves);
+  moveCount.textContent = String(moveLimit - moves);
   const selectedTile = selected === null ? null : cells[selected];
   cells.forEach((tile, index) => {
     const button = buttons[index];

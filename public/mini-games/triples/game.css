@@ -6,22 +6,27 @@ body {
   padding: var(--page-padding);
   min-height: 100vh;
   display: grid;
-  place-items: center;
+  place-items: stretch center;
   background: var(--page-background);
   color: var(--text-light);
   font: var(--ui-font-size)/var(--ui-line-height) var(--ui-font);
 }
 main {
+  display: flex;
+  flex-direction: column;
   width: min(100%, var(--content-width));
 }
-h1 {
-  margin: 0;
-  font-size: var(--title-size);
-  letter-spacing: -0.05em;
+.game-layout {
+  margin-block: auto;
 }
 p {
   margin: 6px 0 18px;
   color: var(--text-muted);
+}
+#instructions {
+  margin: 0;
+  padding: 8px 16px 20px;
+  font-style: italic;
 }
 button {
   font: inherit;
@@ -29,19 +34,30 @@ button {
 }
 .toolbar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  justify-content: flex-end;
   margin-bottom: 10px;
 }
-.board-stats {
+.board-actions {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px 14px;
+  gap: 8px;
+}
+.move-counter {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+}
+.move-counter label {
+  color: var(--text-muted);
+  font-size: 0.75em;
+  line-height: 1;
 }
 .move-count {
+  justify-self: stretch;
+  padding: 4px 0;
+  border: 1px solid var(--empty-tile-border);
+  border-radius: 8px;
+  text-align: center;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -51,6 +67,14 @@ button {
   align-items: center;
   gap: 8px;
 }
+.board-controls > label[for="group-size"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .toolbar :is(button, select) {
   font: inherit;
   padding: 7px 12px;
@@ -58,6 +82,17 @@ button {
   border-radius: 8px;
   background: var(--empty-tile);
   color: var(--text-light);
+}
+#shuffle {
+  display: grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+}
+#shuffle::before {
+  content: '';
+  border-block: 7px solid transparent;
+  border-inline-start: 11px solid currentColor;
 }
 #board {
   position: relative;
