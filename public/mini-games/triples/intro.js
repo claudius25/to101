@@ -27,6 +27,36 @@
   let ignoreClick = false;
   let lesson = 1;
   let completed = false;
+  let cornerTaps = 0;
+  let firstCornerTap = 0;
+
+  document.addEventListener('pointerup', (event) => {
+    if (!event.isPrimary || event.button !== 0) return;
+    if (event.clientX < 0 || event.clientX > 44 || event.clientY < 0 || event.clientY > 44) {
+      cornerTaps = 0;
+      return;
+    }
+    if (cornerTaps === 0 || event.timeStamp - firstCornerTap > 1200) {
+      firstCornerTap = event.timeStamp;
+      cornerTaps = 0;
+    }
+    if (++cornerTaps !== 3) return;
+    cornerTaps = 0;
+
+    if (window.parent !== window) {
+      window.parent.postMessage('triples:reset-storage', '*');
+      return;
+    }
+    try {
+      localStorage.removeItem(skipIntroKey);
+      sessionStorage.removeItem(triplesRunKey);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('skipIntro');
+      window.location.replace(url.href);
+    } catch {
+      // Storage may be disabled for this page.
+    }
+  });
   function placePracticeTiles({ yellowAt = 4, blueAt = 7, heartAt, partnerAt, targetAt = 13, blackAt }) {
     const positions = { [yellowAt]: yellow, [blueAt]: blue, [targetAt]: target, 12: source };
     const place = (index, tile, label) => {
@@ -55,7 +85,7 @@
     target.disabled = !selected;
   }
 
-  async function completeMatch() {
+  async function completeMatch(clickEvent) {
     board.classList.add('matched');
     for (const tile of partners) {
       tile.setAttribute('aria-hidden', 'true');
@@ -71,6 +101,16 @@
       target.classList.add('fixed');
       showTileFace(target.firstElementChild, tiles.fixed);
       target.setAttribute('aria-label', 'Matched gray tile');
+    }
+    if (lesson !== 4 && !reducedMotion.matches) {
+      const tile = tiles[heart.id];
+      const followers = [...partners].map((partner, index) => ({
+        face: makeSlidingFace(tile, index === 0 ? heart.art : null),
+        source: partner,
+      }));
+      await animateMerge(board, makeSlidingFace(tile), clickEvent ? source : target, target,
+        clickEvent ? slideDurationMs : 0, followers, 4);
+      if (intro.hidden) return;
     }
     if (lesson === 5) {
       if (!reducedMotion.matches) {
@@ -221,7 +261,7 @@
     document.querySelector('main').hidden = false;
     if (focusPlay) {
       saveTriplesRun();
-      document.querySelector('#shuffle').focus();
+      document.querySelector('#settings-open').focus();
     }
   }
   async function advanceLesson() {
@@ -282,16 +322,26 @@
     }
   }
   if (skipIntro) openGame(false);
+
+  const navigation = performance.getEntriesByType('navigation')[0];
+  function initializeRun(snapshot, appRefreshed = false) {
+    const freshBoard = appRefreshed || navigation?.type === 'reload';
+    if (restoreTriplesRun(snapshot, freshBoard)) {
+      openGame(false);
+      if (freshBoard) saveTriplesRun();
+    } else if (skipIntro) {
+      saveTriplesRun();
+    }
+  }
+
   if (window.parent !== window) {
     window.addEventListener('message', (event) => {
       if (event.source !== window.parent || event.data?.type !== 'triples:restore-run') return;
-      if (restoreTriplesRun(event.data.snapshot)) openGame(false);
-      else if (skipIntro) saveTriplesRun();
+      initializeRun(event.data.snapshot, event.data.freshBoard === true);
     });
   } else {
     try {
-      if (restoreTriplesRun(sessionStorage.getItem(triplesRunKey))) openGame(false);
-      else if (skipIntro) saveTriplesRun();
+      initializeRun(sessionStorage.getItem(triplesRunKey));
     } catch {
       // Storage may be disabled for this page.
     }

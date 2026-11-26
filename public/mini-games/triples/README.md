@@ -4,8 +4,8 @@ Open the Angular route `/slide-and-match`. It loads this game in a sandboxed ifr
 
 | File | Settings |
 | --- | --- |
-| `settings.js` → `rules` | Board size, move budget, minimum starting empty spaces, distance-based scoring, the black tile's gray-tile rule, shuffle sampling, color spacing, drag threshold, and animation cleanup timeout. |
-| `settings.js` → `copy` | Title, instructions, interface labels, accessibility labels, and status messages. Keep any named placeholders such as `{limit}` and `{groups}` where you want their values inserted. |
+| `settings.js` → `rules` | Board size, move budget, minimum starting empty spaces, distance-based scoring, the black tile's gray-tile rule, shuffle sampling, color spacing, and drag threshold. |
+| `settings.js` → `copy` | Title, interface labels, accessibility labels, and status messages. Keep any named placeholders such as `{limit}` and `{groups}` where you want their values inserted. |
 | `settings.js` → `families` | Organ, condition, care label, reference link and note, family swatch, transparent PNG filename in `src/assets/triples/organs`. Use unique IDs and six-digit hex colors. Use `\n` to break a label across lines. |
 | `settings.js` → `art` | Black and gray tile colors. |
 | `theme.css` | Font import and families, font sizes, weights, gaps, margins, board width, colors, corners, active scale, and animation timings. |

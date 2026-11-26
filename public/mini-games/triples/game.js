@@ -1,8 +1,9 @@
 'use strict';
 
-const { rules, copy, art, families, difficulty } = TRIPLES_SETTINGS;
+const { rules, copy, art, families, difficulty, factFonts } = TRIPLES_SETTINGS;
 const difficultyProfiles = difficulty.levels.map((level) => ({
   size: level.size ?? rules.size,
+  groupSize: level.groupSize,
   moveLimit: level.moveLimit ?? Math.max(1, Math.round(rules.moveLimit * level.moveMultiplier)),
   holeMilestones: level.holeMilestones ?? [],
   diamondWindow: level.diamondWindow,
@@ -21,8 +22,9 @@ function countGroups(groupSize, boardSize = size) {
 }
 
 if (
-  difficultyProfiles.some(({ size, moveLimit }) =>
-    !Number.isInteger(size) || size < 2 || countGroups(3, size) < 1 ||
+  difficultyProfiles.some(({ size, moveLimit, groupSize = 3 }) =>
+    !Number.isInteger(size) || size < 2 || ![3, 4].includes(groupSize) ||
+    countGroups(groupSize, size) < 1 ||
     !Number.isInteger(moveLimit) || moveLimit < 1,
   ) ||
   !Number.isInteger(rules.moveLimit) ||
@@ -54,9 +56,7 @@ function plainLabel(text) {
 }
 
 document.title = copy.title;
-const instructions = document.querySelector('#instructions');
-const mobileOrganDisplay = document.querySelector('#mobile-organ-display');
-const factPositions = new Map();
+const organFact = document.querySelector('#organ-fact');
 // document.querySelector('#reference-title').textContent = copy.reference;
 
 const reference = document.querySelector('#reference');
@@ -123,10 +123,10 @@ tiles.fixed = { color: art.fixed.color, kind: 'fixed' };
 const board = document.querySelector('#board');
 const boardResult = document.querySelector('#board-result');
 const moveCount = document.querySelector('#move-count');
-document.querySelector('#moves-label').textContent = copy.moveLabel;
+const movesLabel = document.querySelector('#moves-label');
+movesLabel.textContent = copy.moveLabel;
 const status = document.querySelector('#status');
 const shuffle = document.querySelector('#shuffle');
-shuffle.setAttribute('aria-label', copy.newBoard);
 shuffle.title = copy.newBoard;
 const groupSizeControl = document.querySelector('#group-size');
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -143,10 +143,10 @@ let result;
 let groupSize;
 let groupCount;
 
-function adjacent(first, second) {
+function adjacent(first, second, boardSize = size) {
   return (
-    Math.abs(Math.floor(first / size) - Math.floor(second / size)) +
-      Math.abs((first % size) - (second % size)) ===
+    Math.abs(Math.floor(first / boardSize) - Math.floor(second / boardSize)) +
+      Math.abs((first % boardSize) - (second % boardSize)) ===
     1
   );
 }
@@ -220,27 +220,21 @@ function shuffleInPlace(items) {
 
 function prepareBoard(profile) {
   finishDrag();
-  factPositions.clear();
+  movesLabel.classList.remove('moves-label-leaving', 'moves-label-hidden');
   for (const finish of activeEffects) finish();
   activeProfile = profile;
   ({ size, moveLimit } = activeProfile);
   nextHole = 0;
   board.style.setProperty('--size', size);
   board.setAttribute('aria-label', format(copy.board, { size }));
-  mobileOrganDisplay.hidden = size < 4;
   while (buttons.length > size * size) buttons.pop().remove();
   while (buttons.length < size * size) buttons.push(createCellButton(buttons.length));
   const fourTilesOption = groupSizeControl.querySelector('option[value="4"]');
   fourTilesOption.disabled = countGroups(4) < 1;
   if (fourTilesOption.disabled) groupSizeControl.value = '3';
-  groupSize = Number(groupSizeControl.value);
+  groupSize = profile.groupSize ?? Number(groupSizeControl.value);
   groupCount = countGroups(groupSize);
-  instructions.textContent = [
-    copy.instructions,
-    rules.blackClearsGray ? format(copy.blackRule, { cost: rules.blackGrayMoveCost }) : '',
-    format(copy.goal, { groups: groupCount, limit: moveLimit }),
-  ].filter(Boolean).join(' ');
-  board.querySelectorAll('.clearing-tile, .hole-dust').forEach((effect) => effect.remove());
+  board.querySelectorAll('.hole-dust').forEach((effect) => effect.remove());
 }
 
 function setTileLabel(position, familyIndex, role) {
@@ -250,7 +244,7 @@ function setTileLabel(position, familyIndex, role) {
     text: role === 3 ? family.organ : examples[familyIndex][role],
     type: labelTypes[role],
     organ: role === 0 ? family.art : null,
-    family,
+    fact: family.facts[role],
   });
 }
 
@@ -293,6 +287,7 @@ function newBoard(profile = activeProfile) {
   moves = 0;
   merged = 0;
   result = null;
+  organFact.textContent = '';
   render();
   status.textContent = copy.ready;
   saveTriplesRun();
@@ -348,19 +343,15 @@ function slideDistance(source, target) {
 }
 
 function showOrganFact(index) {
-  const family = tileLabels.get(index)?.family;
-  if (family) {
-    const position = factPositions.get(family.id) ?? 0;
-    mobileOrganDisplay.textContent = family.facts[position];
-    factPositions.set(family.id, (position + 1) % family.facts.length);
-  } else {
-    mobileOrganDisplay.textContent = '';
-  }
+  const fact = tileLabels.get(index)?.fact;
+  if (!fact || organFact.textContent === fact) return;
+  organFact.textContent = fact;
 }
 
 function play(index, route) {
   if (result) return;
   let slide;
+  let mergeFollowers;
   const captured = [];
   let suctionTarget = index;
   let formationDelay = 0;
@@ -382,6 +373,7 @@ function play(index, route) {
     slide = prepareSlide(selected, index, Boolean(route));
     const previousMoves = moves;
     moves += distance;
+    if (previousMoves === 0) movesLabel.classList.add('moves-label-leaving');
     if (tileLabels.has(selected)) {
       tileLabels.set(index, tileLabels.get(selected));
       tileLabels.delete(selected);
@@ -393,9 +385,14 @@ function play(index, route) {
     const group = connectedTiles(cells, index);
     const matched = group.length === groupSize;
     if (matched) {
+      if (slide) {
+        mergeFollowers = group.filter((target) => target !== index).map((target) => ({
+          face: makeSlidingFace(tiles[cells[target]], tileLabels.get(target)?.organ),
+          source: buttons[target],
+        }));
+      }
       for (const target of group) {
         if (target === index) continue;
-        animateClear(target);
         cells[target] = null;
         tileLabels.delete(target);
       }
@@ -425,7 +422,7 @@ function play(index, route) {
         const blackIndex = cells.indexOf('black');
         if (adjacent(index, blackIndex)) {
           suctionTarget = blackIndex;
-          formationDelay = (slide?.duration ?? 0) + slideHoldMs + slideSettleMs;
+          formationDelay = slide ? mergeTiming(slide.duration, group.length - 1).reveal : 0;
           captured.push(index);
           moves += grayCost;
         }
@@ -471,7 +468,11 @@ function play(index, route) {
   }
   render();
   if (slide) {
-    animateSlide(slide);
+    if (mergeFollowers) {
+      animateMerge(board, slide.face, buttons[slide.source], buttons[slide.target], slide.duration, mergeFollowers);
+    } else {
+      animateSlide(slide);
+    }
     if (captured.length) animateSuction(suctionTarget, captured, formationDelay, slide.duration);
   }
 }
@@ -506,30 +507,36 @@ function showTileFace(element, tile, organ) {
   }
 }
 
-function prepareSlide(source, target, alreadyAtTarget) {
-  if (reducedMotion.matches) return null;
+function makeSlidingFace(tile, organ) {
   const face = document.createElement('span');
   face.className = 'sliding-tile';
   face.setAttribute('aria-hidden', 'true');
-  const tile = tiles[cells[source]];
-  showTileFace(face, tile, tileLabels.get(source)?.organ);
+  showTileFace(face, tile, organ);
+  return face;
+}
+
+function prepareSlide(source, target, alreadyAtTarget) {
+  if (reducedMotion.matches) return null;
   return {
-    face,
+    face: makeSlidingFace(tiles[cells[source]], tileLabels.get(source)?.organ),
     source: alreadyAtTarget ? target : source,
     target,
     duration: alreadyAtTarget ? 0 : slideDurationMs,
   };
 }
 
-function animateSlide({ face, source: sourceIndex, target, duration }) {
-  const source = buttons[sourceIndex];
-  const destination = buttons[target].firstElementChild;
+function positionSlidingFace(surface, face, source) {
   face.style.left = `${source.offsetLeft}px`;
   face.style.top = `${source.offsetTop}px`;
   face.style.width = `${source.offsetWidth}px`;
   face.style.height = `${source.offsetHeight}px`;
-  board.append(face);
+  surface.append(face);
+}
 
+function animateSlide({ face, source: sourceIndex, target, duration }) {
+  const source = buttons[sourceIndex];
+  const destination = buttons[target].firstElementChild;
+  positionSlidingFace(board, face, source);
   const dx = buttons[target].offsetLeft - source.offsetLeft;
   const dy = buttons[target].offsetTop - source.offsetTop;
   const settleDelay = duration + slideHoldMs;
@@ -558,6 +565,156 @@ function animateSlide({ face, source: sourceIndex, target, duration }) {
   };
   activeEffects.add(finish);
   settle.onfinish = finish;
+}
+
+function mergeTiming(travel, followerCount) {
+  const gather = travel + 115;
+  const charge = gather + 270 + (followerCount - 1) * 235 + 50;
+  const pop = charge + 154;
+  return { gather, charge, pop, burst: pop + 72, reveal: pop + 133, end: pop + 205 };
+}
+
+function getMergeRoutes(surface, target, followers, boardSize) {
+  const squares = Array.from(surface.querySelectorAll(':scope > .cell'));
+  const ordered = [{ square: target, path: [] }];
+  const visited = new Set([target]);
+  for (const { square, path } of ordered) {
+    for (const follower of followers) {
+      if (visited.has(follower.source) ||
+          !adjacent(squares.indexOf(square), squares.indexOf(follower.source), boardSize)) continue;
+      visited.add(follower.source);
+      ordered.push({ square: follower.source, path: [square, ...path], face: follower.face });
+    }
+  }
+  return ordered.slice(1);
+}
+
+function animateMerge(surface, lead, source, target, travelDuration, followers, boardSize = size) {
+  const routes = getMergeRoutes(surface, target, followers, boardSize);
+  const timing = mergeTiming(travelDuration, followers.length);
+  const offset = (time) => time / timing.end;
+  const lift = Math.max(22, target.offsetWidth * .4);
+  const peek = Math.max(6, target.offsetWidth * .1);
+  const dx = target.offsetLeft - source.offsetLeft;
+  const dy = target.offsetTop - source.offsetTop;
+  const animations = [];
+  const faces = [lead, ...followers.map(({ face }) => face)];
+  animations.push(target.firstElementChild.animate(
+    [
+      { opacity: 0, transform: 'scale(0)' },
+      { opacity: 1, transform: 'scale(1.12)', offset: .6 },
+      { opacity: 1, transform: 'scale(1)' },
+    ],
+    { delay: timing.reveal, duration: 270, fill: 'backwards', easing: 'ease-out' },
+  ));
+
+  positionSlidingFace(surface, lead, source);
+  lead.classList.add('merge-lead', 'settled-tile');
+  const raised = (y, scale) => `translate(${dx}px, ${dy - y}px) scale(${scale})`;
+  animations.push(lead.animate(
+    [
+      { transform: 'translate(0, 0)', easing: 'ease-in-out' },
+      { transform: raised(0, '1'), offset: offset(travelDuration), easing: 'ease-out' },
+      { transform: raised(lift, '1.14'), offset: offset(travelDuration + 192) },
+      { transform: raised(lift, '1.14'), filter: 'brightness(1)', offset: offset(timing.charge) },
+      { transform: raised(lift - 2, '1.22, 1.06'), filter: 'brightness(1.3)', offset: offset(timing.charge + 54) },
+      { transform: raised(lift + 2, '1.08, 1.22'), offset: offset(timing.charge + 108) },
+      { transform: raised(lift + 2, '1.18'), offset: offset(timing.pop) },
+      { transform: raised(lift + 2, '1.34'), filter: 'brightness(1.55)', offset: offset(timing.burst), easing: 'ease-in' },
+      { transform: raised(lift + 2, '0'), opacity: 0 },
+    ],
+    { duration: timing.end, fill: 'forwards' },
+  ));
+
+  for (const [index, { face, square: partner, path }] of routes.entries()) {
+    positionSlidingFace(surface, face, partner);
+    face.classList.add('settled-tile');
+    face.style.zIndex = String(3 - index);
+    const delay = timing.gather + index * 235;
+    const x = target.offsetLeft - partner.offsetLeft;
+    const y = target.offsetTop - partner.offsetTop - lift + (index + 1) * peek;
+    const stacked = `translate(${x}px, ${y}px) scale(${1 - (index + 1) * .07})`;
+    const frames = [
+      { transform: 'translate(0, 0)', offset: 0 },
+      { transform: 'translate(0, 0)', offset: offset(delay), easing: 'ease-in-out' },
+    ];
+    path.forEach((waypoint, step) => {
+      const stepX = waypoint.offsetLeft - partner.offsetLeft;
+      const stepY = waypoint.offsetTop - partner.offsetTop;
+      frames.push({
+        transform: `translate(${stepX}px, ${stepY}px)`,
+        offset: offset(delay + (step + 1) * 205 / path.length),
+        easing: 'ease-in-out',
+      });
+    });
+    frames.push(
+      { transform: stacked, offset: offset(delay + 270) },
+      { transform: stacked, offset: offset(timing.pop), easing: 'ease-in' },
+      { transform: `translate(${x}px, ${y - peek}px) scale(0)`, opacity: 0 },
+    );
+    animations.push(face.animate(frames, { duration: timing.end, fill: 'forwards' }));
+  }
+
+  const { layer, effects } = animateMergeConfetti(target, lift, lead.style.getPropertyValue('--tile'), timing.burst);
+  animations.push(...effects);
+  return new Promise((resolve) => {
+    const finish = () => {
+      for (const animation of animations) animation.cancel();
+      for (const face of faces) face.remove();
+      layer.remove();
+      activeEffects.delete(finish);
+      resolve();
+    };
+    activeEffects.add(finish);
+    animations.at(-1).onfinish = finish;
+  });
+}
+
+function animateMergeConfetti(target, lift, color, delay) {
+  const layer = document.createElement('span');
+  layer.className = 'merge-confetti-layer';
+  layer.setAttribute('aria-hidden', 'true');
+  const burst = document.createElement('span');
+  burst.className = 'merge-confetti';
+  const rect = target.getBoundingClientRect();
+  burst.style.left = `${rect.left + rect.width / 2}px`;
+  burst.style.top = `${rect.top + rect.height / 2 - lift}px`;
+  burst.style.setProperty('--merge-color', color);
+  layer.append(burst);
+  document.body.append(layer);
+
+  const flash = document.createElement('span');
+  const ring = document.createElement('span');
+  flash.className = 'merge-flash';
+  ring.className = 'merge-ring';
+  burst.append(flash, ring);
+  const expand = (element, scale, duration) => element.animate(
+    [{ opacity: 1, scale: .35 }, { opacity: 0, scale }],
+    { delay, duration, easing: 'ease-out' },
+  );
+  const effects = [expand(flash, 2, 240), expand(ring, 2.6, 420)];
+
+  for (let index = 0; index < 48; index++) {
+    const particle = document.createElement('i');
+    burst.append(particle);
+    const angle = Math.random() * Math.PI * 2;
+    const radius = Math.max(55, rect.width * .8) * (1 + Math.random() * 1.5);
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius * .85 - 28;
+    const fall = 65 + Math.random() * 80;
+    const spin = Math.random() * 720 - 360;
+    effects.push(particle.animate(
+      [
+        { opacity: 1, transform: 'scale(.55)', easing: 'cubic-bezier(.1,.8,.3,1)' },
+        { opacity: 1, transform: `translate(${x}px, ${y}px) rotate(${spin / 2}deg) rotateX(${spin * .8}deg)`,
+          offset: .4, easing: 'cubic-bezier(.45,0,1,1)' },
+        { opacity: 0, transform: `translate(${x * 1.2}px, ${y + fall}px) rotate(${spin}deg) rotateX(${spin * 2}deg) scale(.85)` },
+      ],
+      { delay: delay + Math.random() * 38, duration: 610 + Math.random() * 416 },
+    ));
+  }
+  effects.push(layer.animate([{ opacity: 1 }, { opacity: 1 }], delay + 1080));
+  return { layer, effects };
 }
 
 function animateSuction(target, captured, formationDelay, travelDuration) {
@@ -637,35 +794,13 @@ function animateSuction(target, captured, formationDelay, travelDuration) {
   pulse.onfinish = finish;
 }
 
-function animateClear(index) {
-  if (reducedMotion.matches) return;
-  const button = buttons[index];
-  const tile = tiles[cells[index]];
-  const overlay = document.createElement('span');
-  overlay.className = 'clearing-tile';
-  overlay.setAttribute('aria-hidden', 'true');
-  showTileFace(overlay, tile, tileLabels.get(index)?.organ);
-
-  button.querySelector('.clearing-tile')?.remove();
-  button.append(overlay);
-  const timeout = setTimeout(() => overlay.remove(), rules.clearAnimationTimeoutMs);
-  overlay.addEventListener(
-    'animationend',
-    () => {
-      clearTimeout(timeout);
-      overlay.remove();
-    },
-    { once: true },
-  );
-}
-
 function render(animateNewHoles = true) {
-  if (selected === null && !drag?.active) mobileOrganDisplay.textContent = '';
   boardResult.hidden = result === null;
   boardResult.textContent = result ? copy[result === 'win' ? 'winTitle' : 'lossTitle'] : '';
   if (result) board.dataset.result = result;
   else delete board.dataset.result;
   moveCount.textContent = String(moveLimit - moves);
+  movesLabel.classList.toggle('moves-label-hidden', moves > 0);
   const selectedTile = selected === null ? null : cells[selected];
   cells.forEach((tile, index) => {
     const button = buttons[index];
@@ -694,9 +829,6 @@ function render(animateNewHoles = true) {
       dust.setAttribute('aria-hidden', 'true');
       dust.addEventListener('animationend', () => dust.remove(), { once: true });
       button.append(dust);
-    }
-    if (tile === 'fixed' || (isMovable(tile) && tile !== 'black')) {
-      button.querySelector('.clearing-tile')?.remove();
     }
     const label = tileLabels.get(index);
     const hideLabel = !label?.organ && index !== selected && !partner;
@@ -926,25 +1058,54 @@ board.addEventListener(
 
 const difficultyInput = document.querySelector('#difficulty');
 const difficultyCurrent = document.querySelector('#difficulty-current');
+const fontInput = document.querySelector('#fact-font');
+const fontPreview = document.querySelector('#fact-font-preview');
+const fontSizeInput = document.querySelector('#fact-font-size');
+const fontSizeValue = document.querySelector('#fact-font-size-value');
+const main = document.querySelector('main');
 const lastDifficultyIndex = difficulty.levels.length - 1;
 difficultyInput.max = lastDifficultyIndex;
 difficultyInput.value = difficulty.initialIndex;
+fontInput.max = factFonts.length - 1;
+fontInput.value = 0;
+
+function updateSlider(input, label) {
+  input.setAttribute('aria-valuetext', label);
+  const min = Number(input.min);
+  const progress = (input.valueAsNumber - min) / (Number(input.max) - min) * 100;
+  input.parentElement.style.setProperty('--range-progress', `${progress}%`);
+}
 
 function showDifficulty() {
   const index = difficultyInput.valueAsNumber;
   const { label } = difficulty.levels[index];
-  difficultyInput.setAttribute('aria-valuetext', label);
-  difficultyInput.parentElement.style.setProperty('--difficulty-progress', `${index / lastDifficultyIndex * 100}%`);
+  updateSlider(difficultyInput, label);
   difficultyCurrent.textContent = label;
+}
+
+function showFactFont() {
+  const font = factFonts[fontInput.valueAsNumber];
+  updateSlider(fontInput, font);
+  main.style.setProperty('--fact-font', `"${font}"`);
+  fontPreview.textContent = font;
+}
+
+function showFactFontSize() {
+  const size = fontSizeInput.valueAsNumber;
+  updateSlider(fontSizeInput, `${size} pixels`);
+  main.style.setProperty('--fact-font-size', `${size}px`);
+  fontSizeValue.textContent = `${size} px`;
 }
 
 const triplesRunKey = 'triples.activeRun.v1';
 
 function saveTriplesRun() {
-  if (document.querySelector('main').hidden) return;
+  if (main.hidden) return;
   const snapshot = JSON.stringify({
     difficulty: difficultyProfiles.indexOf(activeProfile),
     queuedDifficulty: difficultyInput.valueAsNumber,
+    factFont: factFonts[fontInput.valueAsNumber],
+    factFontSize: fontSizeInput.valueAsNumber,
     size, moveLimit, groupSize, moves, merged, result, nextHole, cells,
     diamondAt, diamondPosition, diamondCollected,
     roles: cells.map((_, index) => tileLabels.get(index)?.role ?? null),
@@ -961,7 +1122,7 @@ function saveTriplesRun() {
   }
 }
 
-function restoreTriplesRun(snapshot) {
+function restoreTriplesRun(snapshot, freshBoard = false) {
   let saved;
   try {
     saved = JSON.parse(snapshot);
@@ -979,6 +1140,7 @@ function restoreTriplesRun(snapshot) {
   if (
     !profile || saved.size !== profile.size || saved.moveLimit !== profile.moveLimit ||
     ![3, 4].includes(saved.groupSize) || countGroups(saved.groupSize, profile.size) < 1 ||
+    (profile.groupSize !== undefined && saved.groupSize !== profile.groupSize) ||
     !Number.isInteger(saved.moves) || saved.moves < 0 || saved.moves > profile.moveLimit ||
     !Number.isInteger(saved.merged) || saved.merged < 0 ||
     saved.merged > countGroups(saved.groupSize, profile.size) ||
@@ -998,7 +1160,18 @@ function restoreTriplesRun(snapshot) {
     )
   ) return false;
 
-  groupSizeControl.value = String(saved.groupSize);
+  if (profile.groupSize === undefined) groupSizeControl.value = String(saved.groupSize);
+  difficultyInput.value = difficultyProfiles[saved.queuedDifficulty] ? saved.queuedDifficulty : saved.difficulty;
+  showDifficulty();
+  fontInput.value = Math.max(0, factFonts.indexOf(saved.factFont));
+  showFactFont();
+  fontSizeInput.value = Number.isInteger(saved.factFontSize) ? saved.factFontSize : fontSizeInput.defaultValue;
+  showFactFontSize();
+  if (freshBoard) {
+    newBoard(profile);
+    return true;
+  }
+
   prepareBoard(profile);
   ({ cells, moves, merged, result, nextHole } = saved);
   diamondCollected = Boolean(profile.diamondWindow && saved.diamondCollected === true);
@@ -1017,8 +1190,6 @@ function restoreTriplesRun(snapshot) {
   cells.forEach((tile, index) => {
     if (isMovable(tile) && tile !== 'black') setTileLabel(index, colors.indexOf(tile), saved.roles[index]);
   });
-  difficultyInput.value = difficultyProfiles[saved.queuedDifficulty] ? saved.queuedDifficulty : saved.difficulty;
-  showDifficulty();
   render(false);
   status.textContent = typeof saved.status === 'string' ? saved.status : copy.ready;
   return true;
@@ -1029,9 +1200,65 @@ difficultyInput.addEventListener('input', () => {
   saveTriplesRun();
 });
 showDifficulty();
+fontInput.addEventListener('input', () => {
+  showFactFont();
+  saveTriplesRun();
+});
+showFactFont();
+fontSizeInput.addEventListener('input', () => {
+  showFactFontSize();
+  saveTriplesRun();
+});
+showFactFontSize();
 
+const settingsDialog = document.querySelector('#settings-dialog');
+const settingsOpen = document.querySelector('#settings-open');
+const settingsClose = document.querySelector('#settings-close');
+const settingsOffscreen = 'translateY(calc(-100% - 16px))';
+let settingsEntrance;
+let settingsClosing = false;
+
+settingsOpen.addEventListener('click', () => {
+  if (settingsDialog.open) return;
+  settingsDialog.showModal();
+  if (!reducedMotion.matches) {
+    settingsEntrance = settingsDialog.animate(
+      [{ transform: settingsOffscreen }, { transform: 'none' }],
+      { duration: 240, easing: 'ease-out' },
+    );
+  }
+});
+
+function closeSettings() {
+  if (!settingsDialog.open || settingsClosing) return;
+  if (reducedMotion.matches) {
+    settingsEntrance?.cancel();
+    settingsDialog.close();
+    return;
+  }
+  settingsClosing = true;
+  const start = getComputedStyle(settingsDialog).transform;
+  settingsEntrance?.cancel();
+  const exit = settingsDialog.animate(
+    [{ transform: start }, { transform: settingsOffscreen }],
+    { duration: 200, easing: 'ease-in', fill: 'forwards' },
+  );
+  exit.onfinish = () => {
+    settingsDialog.close();
+    exit.cancel();
+    settingsClosing = false;
+  };
+}
+
+settingsClose.addEventListener('click', closeSettings);
+settingsDialog.addEventListener('cancel', (event) => {
+  event.preventDefault();
+  closeSettings();
+});
 shuffle.addEventListener('click', () => {
+  if (settingsClosing) return;
   newBoard(difficultyProfiles[difficultyInput.valueAsNumber]);
+  closeSettings();
 });
 groupSizeControl.addEventListener('change', () => newBoard());
 newBoard();

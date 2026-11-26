@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Slide &amp; Match: Triples</title>
     <link rel="stylesheet" href="theme.css" />
-    <link rel="stylesheet" href="game.css?v=mobile-organ-display-3" />
+    <link rel="stylesheet" href="game.css?v=moves-label-9" />
   </head>
   <body>
     <section class="intro" aria-labelledby="intro-title">
@@ -25,32 +25,46 @@
       <button id="intro-skip" type="button">SKIP INTRO TO PLAY</button>
     </section>
     <main hidden>
-      <p id="instructions"></p>
+      <div id="organ-fact" role="status"></div>
+      <button id="settings-open" type="button" aria-label="Settings" aria-haspopup="dialog" aria-controls="settings-dialog">⚙</button>
+      <dialog class="settings-dialog" id="settings-dialog" aria-labelledby="settings-title">
+        <h2 id="settings-title">Settings</h2>
+        <button id="settings-close" type="button" aria-label="Close settings">×</button>
+        <div class="settings-slider">
+          <div class="difficulty-selection" aria-hidden="true">
+            <span id="difficulty-current"></span>
+          </div>
+          <input class="settings-range" id="difficulty" type="range" min="0" step="1" aria-label="Difficulty" />
+        </div>
+        <div class="settings-slider font-setting" hidden>
+          <div class="font-setting-header">
+            <label for="fact-font">Fact font</label>
+            <span id="fact-font-preview" aria-hidden="true"></span>
+          </div>
+          <input class="settings-range" id="fact-font" type="range" min="0" step="1" />
+        </div>
+        <div class="settings-slider font-setting" hidden>
+          <div class="font-setting-header">
+            <label for="fact-font-size">Fact text size</label>
+            <span id="fact-font-size-value" aria-hidden="true"></span>
+          </div>
+          <input class="settings-range" id="fact-font-size" type="range" min="14" max="36" value="18" step="1" />
+        </div>
+        <label for="group-size" hidden>Group size</label>
+        <select id="group-size" hidden>
+          <option value="3">3 tiles</option>
+          <option value="4">4 tiles</option>
+        </select>
+        <button id="shuffle" type="button"><span>Play</span></button>
+      </dialog>
       <div class="game-layout">
         <div class="toolbar">
-          <div class="difficulty">
-            <div class="difficulty-selection" aria-hidden="true">
-              <span id="difficulty-current"></span>
-            </div>
-            <input id="difficulty" type="range" min="0" step="1" aria-label="Difficulty" />
-          </div>
-          <div class="board-controls">
-            <label for="group-size">Group size</label>
-            <select id="group-size" hidden>
-              <option value="3">3 tiles</option>
-              <option value="4">4 tiles</option>
-            </select>
-            <div class="board-actions">
-              <div class="move-counter">
-                <label for="move-count" id="moves-label"></label>
-                <output class="move-count" id="move-count"></output>
-              </div>
-              <button id="shuffle" type="button"></button>
-            </div>
+          <div class="move-counter">
+            <label for="move-count" id="moves-label"></label>
+            <output class="move-count" id="move-count"></output>
           </div>
         </div>
         <div id="board" role="group">
-          <div class="mobile-organ-display" id="mobile-organ-display" role="status"></div>
           <div id="board-result" aria-hidden="true" hidden></div>
         </div>
         <p id="status" role="status"></p>
@@ -61,7 +75,7 @@
       </details> -->
     </main>
     <script src="settings.js"></script>
-    <script src="game.js"></script>
-    <script src="intro.js"></script>
+    <script src="game.js?v=refresh-14"></script>
+    <script src="intro.js?v=refresh-14"></script>
   </body>
 </html>

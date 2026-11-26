@@ -4,6 +4,7 @@ import { DomSanitizer } from '@angular/platform-browser';
 const SKIP_INTRO_KEY = 'triples.skipIntro';
 const SKIP_INTRO_THRESHOLD = 5;
 const RUN_KEY = 'triples.activeRun.v1';
+let initialFrameLoad = true;
 
 @Component({
   selector: 'app-triples-page',
@@ -39,6 +40,12 @@ export class TriplesPage {
   );
 
   protected restoreGame(): void {
+    const navigation = performance.getEntriesByType('navigation')[0] as
+      | PerformanceNavigationTiming
+      | undefined;
+    const freshBoard = initialFrameLoad && navigation?.type === 'reload' &&
+      new URL(navigation.name).pathname === window.location.pathname;
+    initialFrameLoad = false;
     let snapshot: string | null = null;
     try {
       snapshot = sessionStorage.getItem(RUN_KEY);
@@ -46,14 +53,18 @@ export class TriplesPage {
       // Storage may be disabled for this tab.
     }
     this.gameFrame()?.nativeElement.contentWindow?.postMessage(
-      { type: 'triples:restore-run', snapshot }, '*',
+      { type: 'triples:restore-run', snapshot, freshBoard }, '*',
     );
   }
 
   protected handleGameMessage(event: MessageEvent): void {
     if (event.source !== this.gameFrame()?.nativeElement.contentWindow) return;
     try {
-      if (event.data === 'triples:skip-intro') {
+      if (event.data === 'triples:reset-storage') {
+        localStorage.removeItem(SKIP_INTRO_KEY);
+        sessionStorage.removeItem(RUN_KEY);
+        window.location.reload();
+      } else if (event.data === 'triples:skip-intro') {
         const count = Math.min(this.introSkipCount() + 1, SKIP_INTRO_THRESHOLD);
         localStorage.setItem(SKIP_INTRO_KEY, String(count));
       } else if (event.data?.type === 'triples:save-run' &&

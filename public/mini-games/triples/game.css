@@ -19,6 +19,10 @@ main {
 main[hidden] {
   display: none;
 }
+main::after {
+  content: '';
+  flex: 1 0 0;
+}
 .intro {
   align-self: center;
   width: min(100%, 330px);
@@ -73,8 +77,10 @@ main[hidden] {
   animation-name: intro-route;
   animation-duration: 2.8s;
 }
-.intro-board.matched #intro-source,
-.intro-board.matched .intro-partner {
+.intro-board.matched:not(.absorption-lesson) :is(#intro-source, .intro-partner) {
+  visibility: hidden;
+}
+.intro-board.absorption-lesson.matched #intro-source {
   animation: intro-merge var(--clear-duration) ease-out both;
 }
 #intro-skip {
@@ -119,13 +125,21 @@ main[hidden] {
     opacity: 0;
   }
 }
-.game-layout {
-  margin-block: auto;
+#organ-fact {
+  display: grid;
+  align-content: safe center;
+  justify-items: center;
+  flex: 1 0 4.75rem;
+  overflow: auto;
+  padding: 8px 48px;
+  color: var(--text-light);
+  font-family: var(--fact-font, 'Story Script'), var(--ui-font);
+  font-size: var(--fact-font-size, 18px);
+  line-height: 1.35;
+  text-align: center;
 }
-.difficulty {
-  flex: 1 1 0;
-  min-width: 0;
-  padding-inline: clamp(16px, 6vw, 36px);
+.settings-slider {
+  padding-inline: 26px;
   color: var(--difficulty-accent);
 }
 .difficulty-selection {
@@ -137,10 +151,10 @@ main[hidden] {
 }
 #difficulty-current {
   position: absolute;
-  left: var(--difficulty-progress);
+  left: var(--range-progress);
   transform: translateX(-50%);
 }
-#difficulty {
+.settings-range {
   display: block;
   width: 100%;
   height: 36px;
@@ -150,11 +164,11 @@ main[hidden] {
   border-radius: 18px;
   background: linear-gradient(
     to right,
-    var(--difficulty-accent) var(--difficulty-progress),
-    var(--difficulty-track) var(--difficulty-progress)
+    var(--difficulty-accent) var(--range-progress),
+    var(--difficulty-track) var(--range-progress)
   ) center / 100% 10px no-repeat;
 }
-#difficulty::-webkit-slider-thumb {
+.settings-range::-webkit-slider-thumb {
   appearance: none;
   width: 20px;
   height: 20px;
@@ -163,7 +177,7 @@ main[hidden] {
   background: var(--difficulty-accent);
   box-shadow: 0 0 0 2px var(--difficulty-accent);
 }
-#difficulty::-moz-range-thumb {
+.settings-range::-moz-range-thumb {
   box-sizing: border-box;
   width: 20px;
   height: 20px;
@@ -172,14 +186,26 @@ main[hidden] {
   background: var(--difficulty-accent);
   box-shadow: 0 0 0 2px var(--difficulty-accent);
 }
+.font-setting {
+  margin-block: 12px;
+}
+.font-setting-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+#fact-font-preview {
+  font-family: var(--fact-font, 'Story Script'), var(--ui-font);
+  font-size: var(--fact-font-size, 18px);
+}
+#fact-font-size-value {
+  font-variant-numeric: tabular-nums;
+}
 p {
   margin: 6px 0 18px;
   color: var(--text-muted);
-}
-#instructions {
-  margin: 0;
-  padding: 8px 16px 20px;
-  font-style: italic;
 }
 button {
   font: inherit;
@@ -187,14 +213,9 @@ button {
 }
 .toolbar {
   display: flex;
-  align-items: flex-end;
-  gap: 8px;
+  justify-content: flex-end;
   margin-bottom: 10px;
-}
-.board-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  padding-inline-end: 4px;
 }
 .move-counter {
   display: grid;
@@ -202,36 +223,45 @@ button {
   gap: 2px;
 }
 .move-counter label {
+  position: relative;
+  z-index: 1;
   color: var(--text-muted);
   font-size: 0.75em;
   line-height: 1;
 }
+.moves-label-hidden {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .moves-label-leaving.moves-label-hidden {
+    animation: moves-label-slide 1000ms ease-in-out both;
+  }
+}
+@keyframes moves-label-slide {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(calc(50% + var(--ui-font-size) * var(--ui-line-height) / 2 + 7px));
+    opacity: 0;
+  }
+}
 .move-count {
+  position: relative;
+  z-index: 2;
   justify-self: stretch;
+  min-inline-size: 88px;
   padding: 4px 0;
   border: 1px solid var(--empty-tile-border);
   border-radius: 8px;
+  background: var(--page-background);
   text-align: center;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
-.board-controls {
-  flex: 0 1 auto;
-  max-width: 140px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.board-controls > label[for="group-size"] {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-.toolbar :is(button, select),
+#settings-open,
+.settings-dialog button,
 #intro-skip {
   font: inherit;
   padding: 7px 12px;
@@ -243,10 +273,57 @@ button {
 #intro-skip {
   font-weight: 900;
 }
+#settings-open {
+  border: 1px solid var(--page-background);
+  background: var(--page-background);
+}
+#settings-open {
+  position: fixed;
+  inset-block-start: 8px;
+  inset-inline-end: 8px;
+  z-index: 4;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  font-size: 1.45rem;
+  line-height: 1;
+}
+.settings-dialog {
+  position: fixed;
+  inset: 0 0 auto;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--empty-tile-border);
+  border-radius: 0 0 var(--board-radius) var(--board-radius);
+  background: var(--board-background);
+  color: var(--text-light);
+}
+.settings-dialog::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+.settings-dialog h2 {
+  margin: 0 42px 14px 0;
+  font-size: 1.15rem;
+}
+#settings-close {
+  position: absolute;
+  border: 0;
+  background: transparent;
+  inset-block-start: 8px;
+  inset-inline-end: 8px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  font-size: 1.35rem;
+  line-height: 1;
+}
 #shuffle {
-  display: grid;
-  place-items: center;
-  min-width: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0 auto;
   min-height: 44px;
 }
 #shuffle::before {
@@ -268,28 +345,6 @@ button {
   padding-block-start: max(var(--board-padding), calc(var(--tile-lift) + 3px));
   border-radius: var(--board-radius);
   background: var(--board-background);
-}
-.mobile-organ-display {
-  position: absolute;
-  grid-area: 4 / 1 / 5 / -1;
-  inset-inline: 0;
-  top: calc(-1 * var(--board-row-gap));
-  height: var(--board-row-gap);
-  pointer-events: none;
-  display: none;
-}
-@media (max-width: 600px) {
-  .mobile-organ-display:not([hidden]) {
-    padding: 0 3px;
-    display: grid;
-    place-items: center;
-    z-index: 3;
-    color: var(--text-light);
-    font-size: clamp(0.58rem, 2.5vw, 0.75rem);
-    line-height: 1.1;
-    text-align: center;
-    text-shadow: 0 1px 3px #000;
-  }
 }
 #board[data-result='win'] {
   --result-color: #79f59b;
@@ -409,12 +464,7 @@ button {
   22% { opacity: 1; }
   to { opacity: 0; transform: translateY(-12%) scale(1.45); }
 }
-.clearing-tile {
-  position: absolute;
-  inset: -1px;
-  animation: clear-pair var(--clear-duration) ease-in both;
-}
-:is(.tile-face, .clearing-tile, .drag-tile, .sliding-tile) {
+:is(.tile-face, .drag-tile, .sliding-tile) {
   display: grid;
   place-items: center;
   pointer-events: none;
@@ -463,20 +513,6 @@ button {
     transparent
   );
   mask-image: radial-gradient(transparent 43%, #000 54%, transparent 72%);
-}
-@keyframes clear-pair {
-  0% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  25% {
-    transform: scale(1.07);
-    opacity: 1;
-  }
-  100% {
-    transform: scale(0.2);
-    opacity: 0;
-  }
 }
 .cell.partner {
   z-index: 1;
@@ -546,6 +582,55 @@ button {
 }
 .sliding-tile.settled-tile {
   --lift: 0px;
+}
+.sliding-tile.merge-lead {
+  z-index: 4;
+}
+.merge-confetti-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 12;
+  overflow: clip;
+  pointer-events: none;
+}
+.merge-confetti {
+  position: absolute;
+}
+.merge-confetti > * {
+  position: absolute;
+  inset: 0 auto auto 0;
+  translate: -50% -50%;
+  opacity: 0;
+}
+.merge-flash,
+.merge-ring {
+  width: 64px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+}
+.merge-flash {
+  background: radial-gradient(circle, #fff9ef, color-mix(in srgb, var(--merge-color), transparent 60%) 45%, transparent 72%);
+}
+.merge-ring {
+  border: 2px solid color-mix(in srgb, var(--merge-color), white 45%);
+  box-shadow: 0 0 12px var(--merge-color);
+}
+.merge-confetti > i {
+  width: 9px;
+  height: 14px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--merge-color), white 42%);
+}
+.merge-confetti > i:nth-child(3n) {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--merge-color), white 65%);
+}
+.merge-confetti > i:nth-child(3n + 1) {
+  width: 5px;
+  height: 17px;
+  background: color-mix(in srgb, var(--merge-color), white 18%);
 }
 .organ-art {
   position: absolute;

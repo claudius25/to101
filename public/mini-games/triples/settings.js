@@ -26,13 +26,9 @@ const TRIPLES_SETTINGS = {
     diagonalColorWeight: 0.35,
     dragThreshold: 6,
     touchReleasePadding: 24,
-    clearAnimationTimeoutMs: 300,
   },
   copy: {
     title: 'Slide & Match: Triples',
-    instructions: '',
-    blackRule: '',
-    goal: 'Match all {groups} groups in {limit} moves or fewer to win.',
     moveLabel: 'Moves left',
     newBoard: 'New board',
     reference: 'Organ, condition, and care reference',
@@ -79,10 +75,11 @@ const TRIPLES_SETTINGS = {
         holeMilestones: [40, 60, 75, 85, 90],
         diamondWindow: [40, 50],
       },
-      { label: 'Harder', moveMultiplier: 0.7 },
+      { label: 'Harder', size: 7, groupSize: 4, moveLimit: 150 },
       { label: 'Impossible', moveMultiplier: 0.55 },
     ],
   },
+  factFonts: ['Story Script', 'Birthstone', 'Playwrite AU SA Guides', 'Roboto', 'Charis SIL'],
   art: {
     black: {
       color: '#090a10',
