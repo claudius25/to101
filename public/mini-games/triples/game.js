@@ -118,9 +118,10 @@ const tiles = Object.fromEntries(
   }),
 );
 tiles.black = { color: art.black.color, kind: 'black' };
-tiles.fixed = { color: art.fixed.color, kind: 'fixed' };
+tiles.fixed = { color: art.fixed.color };
 
 const board = document.querySelector('#board');
+const gameLayout = document.querySelector('.game-layout');
 const boardResult = document.querySelector('#board-result');
 const moveCount = document.querySelector('#move-count');
 const movesLabel = document.querySelector('#moves-label');
@@ -225,7 +226,7 @@ function prepareBoard(profile) {
   activeProfile = profile;
   ({ size, moveLimit } = activeProfile);
   nextHole = 0;
-  board.style.setProperty('--size', size);
+  gameLayout.style.setProperty('--size', size);
   board.setAttribute('aria-label', format(copy.board, { size }));
   while (buttons.length > size * size) buttons.pop().remove();
   while (buttons.length < size * size) buttons.push(createCellButton(buttons.length));
@@ -495,7 +496,6 @@ function createCellButton(index) {
 
 function showTileFace(element, tile, organ) {
   element.classList.toggle('black-piece', tile?.kind === 'black');
-  element.classList.toggle('fixed-piece', tile?.kind === 'fixed');
   element.style.setProperty('--tile', tile?.color ?? '');
   element.replaceChildren();
   if (organ) {
@@ -1031,7 +1031,7 @@ board.addEventListener('pointerup', (event) => {
 });
 
 function cancelDrag(event) {
-  if (drag?.pointerId !== event.pointerId) return;
+  if (!drag || (event && drag.pointerId !== event.pointerId)) return;
   const { active } = drag;
   finishDrag();
   if (active) {
@@ -1045,6 +1045,14 @@ board.addEventListener('pointercancel', cancelDrag);
 board.addEventListener('lostpointercapture', cancelDrag);
 board.addEventListener('pointerleave', (event) => {
   if (!drag?.active) cancelDrag(event);
+});
+window.addEventListener('resize', () => {
+  const pointerId = drag?.pointerId;
+  cancelDrag();
+  if (pointerId !== undefined && board.hasPointerCapture(pointerId)) {
+    board.releasePointerCapture(pointerId);
+  }
+  for (const finish of activeEffects) finish();
 });
 board.addEventListener(
   'click',
@@ -1062,6 +1070,7 @@ const fontInput = document.querySelector('#fact-font');
 const fontPreview = document.querySelector('#fact-font-preview');
 const fontSizeInput = document.querySelector('#fact-font-size');
 const fontSizeValue = document.querySelector('#fact-font-size-value');
+const equalTileGaps = document.querySelector('#equal-tile-gaps');
 const main = document.querySelector('main');
 const lastDifficultyIndex = difficulty.levels.length - 1;
 difficultyInput.max = lastDifficultyIndex;
@@ -1097,6 +1106,10 @@ function showFactFontSize() {
   fontSizeValue.textContent = `${size} px`;
 }
 
+function updateTileGap() {
+  gameLayout.classList.toggle('equal-gaps', equalTileGaps.checked);
+}
+
 const triplesRunKey = 'triples.activeRun.v1';
 
 function saveTriplesRun() {
@@ -1106,6 +1119,7 @@ function saveTriplesRun() {
     queuedDifficulty: difficultyInput.valueAsNumber,
     factFont: factFonts[fontInput.valueAsNumber],
     factFontSize: fontSizeInput.valueAsNumber,
+    equalTileGaps: equalTileGaps.checked,
     size, moveLimit, groupSize, moves, merged, result, nextHole, cells,
     diamondAt, diamondPosition, diamondCollected,
     roles: cells.map((_, index) => tileLabels.get(index)?.role ?? null),
@@ -1167,6 +1181,8 @@ function restoreTriplesRun(snapshot, freshBoard = false) {
   showFactFont();
   fontSizeInput.value = Number.isInteger(saved.factFontSize) ? saved.factFontSize : fontSizeInput.defaultValue;
   showFactFontSize();
+  equalTileGaps.checked = (saved.equalTileGaps ?? saved.removeTileGaps) === true;
+  updateTileGap();
   if (freshBoard) {
     newBoard(profile);
     return true;
@@ -1210,6 +1226,12 @@ fontSizeInput.addEventListener('input', () => {
   saveTriplesRun();
 });
 showFactFontSize();
+equalTileGaps.addEventListener('change', () => {
+  for (const finish of activeEffects) finish();
+  updateTileGap();
+  saveTriplesRun();
+});
+updateTileGap();
 
 const settingsDialog = document.querySelector('#settings-dialog');
 const settingsOpen = document.querySelector('#settings-open');

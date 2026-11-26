@@ -79,7 +79,7 @@ const TRIPLES_SETTINGS = {
       { label: 'Impossible', moveMultiplier: 0.55 },
     ],
   },
-  factFonts: ['Story Script', 'Birthstone', 'Playwrite AU SA Guides', 'Roboto', 'Charis SIL'],
+  factFonts: ['Charis SIL', 'Story Script', 'Birthstone', 'Playwrite AU SA Guides', 'Roboto'],
   art: {
     black: {
       color: '#090a10',

@@ -3,8 +3,9 @@
 }
 body {
   margin: 0;
-  padding: var(--page-padding);
+  padding: var(--page-padding-block) var(--page-padding-inline);
   min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   place-items: stretch center;
   background: var(--page-background);
@@ -12,9 +13,15 @@ body {
   font: var(--ui-font-size)/var(--ui-line-height) var(--ui-font);
 }
 main {
+  --fact-space: 4.75rem;
   display: flex;
   flex-direction: column;
   width: min(100%, var(--content-width));
+}
+@media (max-height: 560px) {
+  main {
+    --fact-space: 3rem;
+  }
 }
 main[hidden] {
   display: none;
@@ -129,11 +136,11 @@ main::after {
   display: grid;
   align-content: safe center;
   justify-items: center;
-  flex: 1 0 4.75rem;
+  flex: 1 0 var(--fact-space);
   overflow: auto;
   padding: 8px 48px;
   color: var(--text-light);
-  font-family: var(--fact-font, 'Story Script'), var(--ui-font);
+  font-family: var(--fact-font, 'Charis SIL'), var(--ui-font);
   font-size: var(--fact-font-size, 18px);
   line-height: 1.35;
   text-align: center;
@@ -197,7 +204,7 @@ main::after {
   gap: 4px 12px;
 }
 #fact-font-preview {
-  font-family: var(--fact-font, 'Story Script'), var(--ui-font);
+  font-family: var(--fact-font, 'Charis SIL'), var(--ui-font);
   font-size: var(--fact-font-size, 18px);
 }
 #fact-font-size-value {
@@ -307,6 +314,20 @@ button {
   margin: 0 42px 14px 0;
   font-size: 1.15rem;
 }
+.tile-gap-setting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding-inline: 26px;
+  cursor: pointer;
+}
+.tile-gap-setting input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--difficulty-accent);
+}
 #settings-close {
   position: absolute;
   border: 0;
@@ -331,6 +352,25 @@ button {
   border-block: 7px solid transparent;
   border-inline-start: 11px solid currentColor;
 }
+.game-layout {
+  --size: 6;
+  /* A raised face must clear the sidewall of the tile in the row above. */
+  --board-row-gap: calc(max(var(--board-gap), var(--tile-lift) + var(--tile-depth) + 3px) + 8px);
+  --board-top-padding: max(var(--board-padding), calc(var(--tile-lift) + 3px));
+  --toolbar-space: calc(var(--ui-font-size) * (var(--ui-line-height) + .75) + 22px);
+  /* Leave room for the fact and counter, accounting for the taller row gaps. */
+  --board-width-limit: calc(
+    100dvh - 2 * var(--page-padding-block) - var(--fact-space) - var(--toolbar-space)
+    - (var(--size) - 1) * (var(--board-row-gap) - var(--board-gap))
+    - (var(--board-top-padding) - var(--board-padding)) - var(--tile-depth)
+  );
+  align-self: center;
+  width: 100%;
+  width: min(100%, max(9rem, var(--board-width-limit)));
+}
+.game-layout.equal-gaps {
+  --board-row-gap: var(--board-gap);
+}
 #board {
   position: relative;
   touch-action: none;
@@ -338,11 +378,9 @@ button {
   display: grid;
   grid-template-columns: repeat(var(--size), minmax(0, 1fr));
   column-gap: var(--board-gap);
-  /* A raised face must clear the sidewall of the tile in the row above. */
-  --board-row-gap: calc(max(var(--board-gap), var(--tile-lift) + var(--tile-depth) + 3px) + 8px);
   row-gap: var(--board-row-gap);
   padding: var(--board-padding);
-  padding-block-start: max(var(--board-padding), calc(var(--tile-lift) + 3px));
+  padding-block-start: var(--board-top-padding);
   border-radius: var(--board-radius);
   background: var(--board-background);
 }
@@ -477,9 +515,6 @@ button {
     0 calc(var(--tile-depth) + var(--lift, 0px) + 3px) 9px rgb(0 0 0 / 72%),
     0 0 clamp(8px, 1.8vw, 16px) 2px
       color-mix(in srgb, var(--glow-color, var(--tile)) var(--glow, 0%), transparent);
-}
-:is(.black-piece, .fixed-piece) {
-  border-radius: 50%;
 }
 .black-piece {
   --glow-color: color-mix(in srgb, var(--tile), white 42%);

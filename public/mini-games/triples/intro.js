@@ -24,6 +24,7 @@
   target.disabled = true;
 
   let drag = null;
+  let absorptionMotion;
   let ignoreClick = false;
   let lesson = 1;
   let completed = false;
@@ -115,13 +116,15 @@
     if (lesson === 5) {
       if (!reducedMotion.matches) {
         const distance = blackTile.offsetLeft - target.offsetLeft;
-        await target.firstElementChild.animate(
+        absorptionMotion = target.firstElementChild.animate(
           [
             { transform: 'translateX(0) scale(1)', opacity: 1 },
             { transform: `translateX(${distance}px) scale(0.2)`, opacity: 0 },
           ],
           { delay: 320, duration: 300, easing: 'ease-in' },
-        ).finished;
+        );
+        await absorptionMotion.finished;
+        absorptionMotion = undefined;
       }
       target.classList.replace('fixed', 'empty');
       showTileFace(target.firstElementChild);
@@ -248,6 +251,17 @@
   source.addEventListener('pointerup', finishDrag);
   source.addEventListener('pointercancel', finishDrag);
   source.addEventListener('lostpointercapture', finishDrag);
+  window.addEventListener('resize', () => {
+    absorptionMotion?.finish();
+    if (!drag) return;
+    const { id } = drag;
+    drag = null;
+    ignoreClick = true;
+    board.classList.remove('practicing');
+    source.style.removeProperty('--intro-slide');
+    source.style.removeProperty('--intro-rise');
+    if (source.hasPointerCapture(id)) source.releasePointerCapture(id);
+  });
   source.addEventListener('click', (event) => {
     if (!ignoreClick || event.detail === 0) {
       const selected = source.getAttribute('aria-pressed') !== 'true';

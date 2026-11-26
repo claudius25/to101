@@ -14,7 +14,8 @@
   --tile-depth: clamp(3px, 1vw, 8px);
   --tile-transition: 150ms ease-out;
   --tile-lift: clamp(7px, 2vw, 16px);
-  --page-padding: 24px 16px;
+  --page-padding-block: 24px;
+  --page-padding-inline: 16px;
   --content-width: 760px;
   --board-gap: clamp(25px, 5vw, 44px);
   --board-padding: clamp(5px, 1.5vw, 10px);
@@ -33,6 +34,25 @@
   :root {
     --board-gap: clamp(8px, 1.25vw, 8px);
     --board-padding: 12px;
-    --page-padding: 16px 8px;
+    --page-padding-block: 16px;
+    --page-padding-inline: 8px;
+  }
+}
+
+@media (max-height: 820px) and (min-width: 601px) {
+  :root {
+    --board-gap: clamp(8px, 2vmin, 18px);
+    --tile-lift: clamp(7px, 1.6vmin, 12px);
+    --tile-depth: clamp(3px, .9vmin, 6px);
+  }
+}
+
+@media (max-height: 560px) {
+  :root {
+    --page-padding-block: 8px;
+    --board-gap: 8px;
+    --board-padding: 8px;
+    --tile-lift: 5px;
+    --tile-depth: 3px;
   }
 }
