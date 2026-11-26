@@ -1,21 +1,30 @@
 'use strict';
 
 const { rules, copy, art, families, difficulty } = TRIPLES_SETTINGS;
-const { size } = rules;
-const difficultyBudgets = difficulty.levels.map(({ moveMultiplier }) =>
-  Math.max(1, Math.round(rules.moveLimit * moveMultiplier)),
-);
-let moveLimit = difficultyBudgets[difficulty.initialIndex];
-function countGroups(groupSize) {
+const difficultyProfiles = difficulty.levels.map((level) => ({
+  size: level.size ?? rules.size,
+  moveLimit: level.moveLimit ?? Math.max(1, Math.round(rules.moveLimit * level.moveMultiplier)),
+  holeMilestones: level.holeMilestones ?? [],
+  diamondWindow: level.diamondWindow,
+}));
+let activeProfile = difficultyProfiles[difficulty.initialIndex];
+let { size, moveLimit } = activeProfile;
+let nextHole = 0;
+let diamondAt = null;
+let diamondPosition = null;
+let diamondCollected = false;
+function countGroups(groupSize, boardSize = size) {
   return Math.min(
     families.length,
-    Math.floor((size * size - 1 - rules.minimumEmptyTiles) / groupSize),
+    Math.floor((boardSize * boardSize - 1 - rules.minimumEmptyTiles) / groupSize),
   );
 }
 
 if (
-  !Number.isInteger(size) ||
-  countGroups(3) < 1 ||
+  difficultyProfiles.some(({ size, moveLimit }) =>
+    !Number.isInteger(size) || size < 2 || countGroups(3, size) < 1 ||
+    !Number.isInteger(moveLimit) || moveLimit < 1,
+  ) ||
   !Number.isInteger(rules.moveLimit) ||
   rules.moveLimit < 1 ||
   !Number.isInteger(rules.minimumEmptyTiles) ||
@@ -47,7 +56,6 @@ function plainLabel(text) {
 document.title = copy.title;
 const instructions = document.querySelector('#instructions');
 const mobileOrganDisplay = document.querySelector('#mobile-organ-display');
-mobileOrganDisplay.hidden = size < 4;
 const factPositions = new Map();
 // document.querySelector('#reference-title').textContent = copy.reference;
 
@@ -114,8 +122,6 @@ tiles.fixed = { color: art.fixed.color, kind: 'fixed' };
 
 const board = document.querySelector('#board');
 const boardResult = document.querySelector('#board-result');
-document.querySelector('main').style.setProperty('--size', size);
-board.setAttribute('aria-label', format(copy.board, { size }));
 const moveCount = document.querySelector('#move-count');
 document.querySelector('#moves-label').textContent = copy.moveLabel;
 const status = document.querySelector('#status');
@@ -123,7 +129,6 @@ const shuffle = document.querySelector('#shuffle');
 shuffle.setAttribute('aria-label', copy.newBoard);
 shuffle.title = copy.newBoard;
 const groupSizeControl = document.querySelector('#group-size');
-groupSizeControl.querySelector('option[value="4"]').disabled = countGroups(4) < 1;
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const activeEffects = new Set();
 const slideDurationMs = 180;
@@ -148,7 +153,7 @@ function adjacent(first, second) {
 
 function connectedTiles(layout, start) {
   const color = layout[start];
-  if (color === null || color === 'black' || color === 'fixed') return [];
+  if (!isMovable(color) || color === 'black') return [];
   const group = [start];
   for (let member = 0; member < group.length; member++) {
     layout.forEach((tile, index) => {
@@ -213,18 +218,54 @@ function shuffleInPlace(items) {
   return items;
 }
 
-function newBoard() {
+function prepareBoard(profile) {
   finishDrag();
   factPositions.clear();
   for (const finish of activeEffects) finish();
+  activeProfile = profile;
+  ({ size, moveLimit } = activeProfile);
+  nextHole = 0;
+  board.style.setProperty('--size', size);
+  board.setAttribute('aria-label', format(copy.board, { size }));
+  mobileOrganDisplay.hidden = size < 4;
+  while (buttons.length > size * size) buttons.pop().remove();
+  while (buttons.length < size * size) buttons.push(createCellButton(buttons.length));
+  const fourTilesOption = groupSizeControl.querySelector('option[value="4"]');
+  fourTilesOption.disabled = countGroups(4) < 1;
+  if (fourTilesOption.disabled) groupSizeControl.value = '3';
   groupSize = Number(groupSizeControl.value);
   groupCount = countGroups(groupSize);
-  const emptyCount = size * size - groupCount * groupSize - 1;
   instructions.textContent = [
     copy.instructions,
     rules.blackClearsGray ? format(copy.blackRule, { cost: rules.blackGrayMoveCost }) : '',
     format(copy.goal, { groups: groupCount, limit: moveLimit }),
   ].filter(Boolean).join(' ');
+  board.querySelectorAll('.clearing-tile, .hole-dust').forEach((effect) => effect.remove());
+}
+
+function setTileLabel(position, familyIndex, role) {
+  const family = families[familyIndex];
+  tileLabels.set(position, {
+    role,
+    text: role === 3 ? family.organ : examples[familyIndex][role],
+    type: labelTypes[role],
+    organ: role === 0 ? family.art : null,
+    family,
+  });
+}
+
+function rollDiamondMove(window) {
+  if (!window) return null;
+  const [first, last] = window;
+  return first + Math.floor(Math.random() * (last - first + 1));
+}
+
+function newBoard(profile = activeProfile) {
+  prepareBoard(profile);
+  diamondAt = rollDiamondMove(profile.diamondWindow);
+  diamondPosition = null;
+  diamondCollected = false;
+  const emptyCount = size * size - groupCount * groupSize - 1;
   const activeColors = chooseBoardColors();
   const deck = activeColors.flatMap((color) => Array(groupSize).fill(color));
   deck.push('black', ...Array(emptyCount).fill(null));
@@ -240,21 +281,13 @@ function newBoard() {
       bestPenalty = penalty;
     }
   }
-  board.querySelectorAll('.clearing-tile').forEach((tile) => tile.remove());
   cells = bestBoard;
   tileLabels.clear();
   colors.forEach((color, index) => {
     const positions = cells.flatMap((tile, position) => (tile === color ? [position] : []));
     // Shuffle the labels within each color so their roles are independent of position.
     shuffleInPlace(positions);
-    positions.forEach((position, role) => {
-      tileLabels.set(position, {
-        text: role === 3 ? families[index].organ : examples[index][role],
-        type: labelTypes[role],
-        organ: role === 0 ? families[index].art : null,
-        family: families[index],
-      });
-    });
+    positions.forEach((position, role) => setTileLabel(position, index, role));
   });
   selected = null;
   moves = 0;
@@ -262,13 +295,17 @@ function newBoard() {
   result = null;
   render();
   status.textContent = copy.ready;
+  saveTriplesRun();
+}
+
+function isMovable(tile) {
+  return tile != null && tile !== 'fixed' && tile !== 'hole';
 }
 
 function canSlideTo(source, target) {
   if (
     source === target ||
-    cells[source] === null ||
-    cells[source] === 'fixed' ||
+    !isMovable(cells[source]) ||
     cells[target] !== null
   )
     return false;
@@ -286,6 +323,23 @@ function canSlide(index) {
   return cells.some((_, target) => canSlideTo(index, target));
 }
 
+function placeHole() {
+  const open = cells.flatMap((tile, index) => tile === null && index !== diamondPosition ? [index] : []);
+  for (const index of shuffleInPlace(open)) {
+    cells[index] = 'hole';
+    if (cells.some((_, source) => canSlide(source))) return true;
+    cells[index] = null;
+  }
+  return false;
+}
+
+function addDueHoles() {
+  const { holeMilestones } = activeProfile;
+  while (moves >= holeMilestones[nextHole]) {
+    if (!placeHole()) return;
+    nextHole++;
+  }
+}
 function slideDistance(source, target) {
   return (
     Math.abs(Math.floor(source / size) - Math.floor(target / size)) +
@@ -310,10 +364,10 @@ function play(index, route) {
   const captured = [];
   let suctionTarget = index;
   let formationDelay = 0;
-  if (cells[index] === 'fixed') {
+  if (cells[index] === 'fixed' || cells[index] === 'hole') {
     selected = null;
-    status.textContent = copy.fixed;
-  } else if (cells[index] !== null) {
+    status.textContent = cells[index] === 'hole' ? copy.hole : copy.fixed;
+  } else if (isMovable(cells[index])) {
     const movable = canSlide(index);
     selected = selected === index ? null : index;
     status.textContent =
@@ -326,6 +380,7 @@ function play(index, route) {
     }
     for (const finish of activeEffects) finish();
     slide = prepareSlide(selected, index, Boolean(route));
+    const previousMoves = moves;
     moves += distance;
     if (tileLabels.has(selected)) {
       tileLabels.set(index, tileLabels.get(selected));
@@ -353,7 +408,12 @@ function play(index, route) {
       status.textContent = copy.moved;
     }
 
-    const grayCost = rules.blackGrayMoveCost;
+    const pickedUpDiamond = index === diamondPosition && cells[index] === 'black';
+    if (pickedUpDiamond) {
+      diamondPosition = null;
+      diamondCollected = true;
+    }
+    const grayCost = diamondCollected ? 0 : rules.blackGrayMoveCost;
     if (rules.blackClearsGray) {
       if (cells[index] === 'black') {
         for (let target = 0; target < cells.length && moves + grayCost <= moveLimit; target++) {
@@ -384,6 +444,18 @@ function play(index, route) {
       }
     }
 
+    if (pickedUpDiamond) status.textContent = copy.diamondCollected;
+    if (merged < groupCount && moves < moveLimit) {
+      if (diamondAt !== null && moves >= diamondAt) {
+        const lastMove = activeProfile.diamondWindow[1];
+        if (previousMoves <= lastMove) {
+          const open = cells.flatMap((tile, position) => tile === null ? [position] : []);
+          diamondPosition = open[Math.floor(Math.random() * open.length)] ?? null;
+        }
+        if (diamondPosition !== null || moves >= lastMove) diamondAt = null;
+      }
+      addDueHoles();
+    }
     if (merged === groupCount) {
       result = 'win';
     } else if (moves === moveLimit) {
@@ -393,6 +465,7 @@ function play(index, route) {
       result = 'loss';
       status.textContent = copy.stuck;
     }
+    saveTriplesRun();
   } else {
     status.textContent = copy.invalid;
   }
@@ -403,7 +476,8 @@ function play(index, route) {
   }
 }
 
-const buttons = Array.from({ length: size * size }, (_, index) => {
+const buttons = [];
+function createCellButton(index) {
   const button = document.createElement('button');
   button.type = 'button';
   button.dataset.index = index;
@@ -416,7 +490,7 @@ const buttons = Array.from({ length: size * size }, (_, index) => {
   });
   board.append(button);
   return button;
-});
+}
 
 function showTileFace(element, tile, organ) {
   element.classList.toggle('black-piece', tile?.kind === 'black');
@@ -585,7 +659,7 @@ function animateClear(index) {
   );
 }
 
-function render() {
+function render(animateNewHoles = true) {
   if (selected === null && !drag?.active) mobileOrganDisplay.textContent = '';
   boardResult.hidden = result === null;
   boardResult.textContent = result ? copy[result === 'win' ? 'winTitle' : 'lossTitle'] : '';
@@ -601,17 +675,29 @@ function render() {
       canSlideTo(selected, index) &&
       moves + (rules.countDistance ? slideDistance(selected, index) : 1) <= moveLimit;
     const partner =
-      tile !== null &&
+      isMovable(tile) &&
       tile !== 'black' &&
-      tile !== 'fixed' &&
       tile === selectedTile &&
       index !== selected;
+    const newHole = tile === 'hole' && !button.classList.contains('hole');
     button.className = 'cell';
     button.classList.toggle('empty', tile === null);
-    button.classList.toggle('fixed', tile === 'fixed');
+    button.classList.toggle('fixed', tile !== null && !isMovable(tile));
+    button.classList.toggle('hole', tile === 'hole');
+    button.classList.toggle('diamond', index === diamondPosition);
+    button.classList.toggle('powered-black', tile === 'black' && diamondCollected);
     button.classList.toggle('partner', partner);
     showTileFace(button.firstElementChild, style, tileLabels.get(index)?.organ);
-    if (tile !== null && tile !== 'black') button.querySelector('.clearing-tile')?.remove();
+    if (newHole && animateNewHoles && !reducedMotion.matches) {
+      const dust = document.createElement('span');
+      dust.className = 'hole-dust';
+      dust.setAttribute('aria-hidden', 'true');
+      dust.addEventListener('animationend', () => dust.remove(), { once: true });
+      button.append(dust);
+    }
+    if (tile === 'fixed' || (isMovable(tile) && tile !== 'black')) {
+      button.querySelector('.clearing-tile')?.remove();
+    }
     const label = tileLabels.get(index);
     const hideLabel = !label?.organ && index !== selected && !partner;
     const description = label ? label.type + (hideLabel ? '' : ', ' + plainLabel(label.text)) : '';
@@ -619,17 +705,20 @@ function render() {
       'aria-label',
       (tile === 'fixed'
         ? copy.fixedTile
-        : tile === 'black'
-          ? copy.blackTile
-          : tile === null
-            ? copy.emptyTile
-            : description || format(copy.tile, { number: style.symbol })) +
+        : tile === 'hole'
+          ? copy.holeTile
+          : tile === 'black'
+            ? diamondCollected ? copy.poweredBlackTile : copy.blackTile
+            : tile === null
+              ? copy.emptyTile
+              : description || format(copy.tile, { number: style.symbol })) +
         ', ' +
         format(copy.position, { row: Math.floor(index / size) + 1, column: (index % size) + 1 }) +
+        (index === diamondPosition ? ', ' + copy.diamondTile : '') +
         (destination ? ', ' + copy.destination : '') +
         (partner ? ', ' + copy.matching : ''),
     );
-    if (tile === null || tile === 'fixed') button.removeAttribute('aria-pressed');
+    if (!isMovable(tile)) button.removeAttribute('aria-pressed');
     else button.setAttribute('aria-pressed', String(selected === index));
   });
 }
@@ -639,7 +728,7 @@ let suppressClick = false;
 
 function canFollowRoute(route) {
   const source = cells[route[0]];
-  return source !== null && source !== 'fixed' && route.slice(1).every(
+  return isMovable(source) && route.slice(1).every(
     (next, index) => cells[next] === null && adjacent(route[index], next),
   );
 }
@@ -762,7 +851,7 @@ board.addEventListener('pointerdown', (event) => {
   const button = event.target.closest('.cell');
   if (!button || result) return;
   const source = Number(button.dataset.index);
-  if (cells[source] === null || cells[source] === 'fixed') return;
+  if (!isMovable(cells[source])) return;
   drag = { pointerId: event.pointerId, source, x: event.clientX, y: event.clientY, active: false, route: [source] };
   if (event.pointerType === 'touch') startDrag(event);
 });
@@ -849,12 +938,100 @@ function showDifficulty() {
   difficultyCurrent.textContent = label;
 }
 
-difficultyInput.addEventListener('input', showDifficulty);
+const triplesRunKey = 'triples.activeRun.v1';
+
+function saveTriplesRun() {
+  if (document.querySelector('main').hidden) return;
+  const snapshot = JSON.stringify({
+    difficulty: difficultyProfiles.indexOf(activeProfile),
+    queuedDifficulty: difficultyInput.valueAsNumber,
+    size, moveLimit, groupSize, moves, merged, result, nextHole, cells,
+    diamondAt, diamondPosition, diamondCollected,
+    roles: cells.map((_, index) => tileLabels.get(index)?.role ?? null),
+    status: status.textContent,
+  });
+  if (window.parent !== window) {
+    window.parent.postMessage({ type: 'triples:save-run', snapshot }, '*');
+    return;
+  }
+  try {
+    sessionStorage.setItem(triplesRunKey, snapshot);
+  } catch {
+    // The current run can still be played without storage.
+  }
+}
+
+function restoreTriplesRun(snapshot) {
+  let saved;
+  try {
+    saved = JSON.parse(snapshot);
+  } catch {
+    return false;
+  }
+  const profile = difficultyProfiles[saved?.difficulty];
+  if (profile?.diamondWindow && Array.isArray(saved.cells) && saved.diamondPosition === undefined) {
+    const oldPosition = saved.cells.indexOf('diamond');
+    if (oldPosition !== -1) {
+      saved.cells[oldPosition] = null;
+      saved.diamondPosition = oldPosition;
+    }
+  }
+  if (
+    !profile || saved.size !== profile.size || saved.moveLimit !== profile.moveLimit ||
+    ![3, 4].includes(saved.groupSize) || countGroups(saved.groupSize, profile.size) < 1 ||
+    !Number.isInteger(saved.moves) || saved.moves < 0 || saved.moves > profile.moveLimit ||
+    !Number.isInteger(saved.merged) || saved.merged < 0 ||
+    saved.merged > countGroups(saved.groupSize, profile.size) ||
+    ![null, 'win', 'loss'].includes(saved.result) ||
+    !Number.isInteger(saved.nextHole) || saved.nextHole < 0 ||
+    saved.nextHole > profile.holeMilestones.length ||
+    !Array.isArray(saved.cells) || saved.cells.length !== profile.size ** 2 ||
+    (saved.diamondPosition != null && (!profile.diamondWindow ||
+      !Number.isInteger(saved.diamondPosition) || saved.diamondPosition < 0 ||
+      saved.diamondPosition >= saved.cells.length || saved.cells[saved.diamondPosition] === 'hole')) ||
+    !Array.isArray(saved.roles) || saved.roles.length !== saved.cells.length ||
+    saved.cells.some((tile, index) =>
+      isMovable(tile) && tile !== 'black'
+        ? !colors.includes(tile) || !Number.isInteger(saved.roles[index]) ||
+          saved.roles[index] < 0 || saved.roles[index] >= saved.groupSize
+        : ![null, 'fixed', 'hole', 'black'].includes(tile),
+    )
+  ) return false;
+
+  groupSizeControl.value = String(saved.groupSize);
+  prepareBoard(profile);
+  ({ cells, moves, merged, result, nextHole } = saved);
+  diamondCollected = Boolean(profile.diamondWindow && saved.diamondCollected === true);
+  diamondPosition = diamondCollected ? null : saved.diamondPosition ?? null;
+  diamondAt = null;
+  if (profile.diamondWindow && !diamondCollected && diamondPosition === null) {
+    const [first, last] = profile.diamondWindow;
+    if (Number.isInteger(saved.diamondAt) && saved.diamondAt >= first && saved.diamondAt <= last) {
+      diamondAt = saved.diamondAt;
+    } else if (saved.diamondAt !== null && moves < last) {
+      diamondAt = rollDiamondMove(profile.diamondWindow);
+    }
+  }
+  selected = null;
+  tileLabels.clear();
+  cells.forEach((tile, index) => {
+    if (isMovable(tile) && tile !== 'black') setTileLabel(index, colors.indexOf(tile), saved.roles[index]);
+  });
+  difficultyInput.value = difficultyProfiles[saved.queuedDifficulty] ? saved.queuedDifficulty : saved.difficulty;
+  showDifficulty();
+  render(false);
+  status.textContent = typeof saved.status === 'string' ? saved.status : copy.ready;
+  return true;
+}
+
+difficultyInput.addEventListener('input', () => {
+  showDifficulty();
+  saveTriplesRun();
+});
 showDifficulty();
 
 shuffle.addEventListener('click', () => {
-  moveLimit = difficultyBudgets[difficultyInput.valueAsNumber];
-  newBoard();
+  newBoard(difficultyProfiles[difficultyInput.valueAsNumber]);
 });
-groupSizeControl.addEventListener('change', newBoard);
+groupSizeControl.addEventListener('change', () => newBoard());
 newBoard();

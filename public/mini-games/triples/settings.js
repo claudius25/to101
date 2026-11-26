@@ -58,6 +58,11 @@ const TRIPLES_SETTINGS = {
     fixedTile: 'Fixed gray tile',
     blackTile: 'Black tile',
     emptyTile: 'Empty',
+    holeTile: 'Hole, blocked',
+    hole: 'Move around the hole.',
+    diamondTile: 'Golden diamond. Slide the black tile onto it to collect it.',
+    diamondCollected: 'Golden diamond collected. Gray tiles now cost no extra moves.',
+    poweredBlackTile: 'Black tile with golden diamond power',
     tile: 'Tile {number}',
     position: 'row {row}, column {column}',
     destination: 'available destination',
@@ -66,9 +71,14 @@ const TRIPLES_SETTINGS = {
   difficulty: {
     initialIndex: 1,
     levels: [
-      { label: 'Easy', moveMultiplier: 1.5 },
+      { label: 'Easy', size: 5, moveLimit: 70 },
       { label: 'Normal', moveMultiplier: 1 },
-      { label: 'Hard', moveMultiplier: 0.85 },
+      {
+        label: 'Hard',
+        moveLimit: 110,
+        holeMilestones: [40, 60, 75, 85, 90],
+        diamondWindow: [40, 50],
+      },
       { label: 'Harder', moveMultiplier: 0.7 },
       { label: 'Impossible', moveMultiplier: 0.55 },
     ],

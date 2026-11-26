@@ -5,7 +5,10 @@
   const board = intro.querySelector('.intro-board');
   const source = intro.querySelector('#intro-source');
   const target = intro.querySelector('#intro-target');
-  const bottomRight = intro.querySelector('#intro-bottom-right');
+  const blackTile = intro.querySelector('#intro-black');
+  const yellow = intro.querySelector('#intro-yellow');
+  const blue = intro.querySelector('#intro-blue');
+  const gesture = intro.querySelector('.intro-gesture');
   const lessonPanel = intro.querySelector('.intro-lesson');
   const skipButton = intro.querySelector('#intro-skip');
   const skipIntroKey = 'triples.skipIntro';
@@ -24,7 +27,28 @@
   let ignoreClick = false;
   let lesson = 1;
   let completed = false;
-  let cornerLayout;
+  function placePracticeTiles({ yellowAt = 4, blueAt = 7, heartAt, partnerAt, targetAt = 13, blackAt }) {
+    const positions = { [yellowAt]: yellow, [blueAt]: blue, [targetAt]: target, 12: source };
+    const place = (index, tile, label) => {
+      positions[index] = tile;
+      tile.setAttribute('aria-label', `${label}, row ${Math.floor(index / 4) + 1}, column ${index % 4 + 1}`);
+    };
+    place(yellowAt, yellow, 'Yellow tile');
+    place(blueAt, blue, 'Blue tile');
+    if (heartAt !== undefined) place(heartAt, partners[0], 'Heart');
+    place(partnerAt, partners[1], lesson === 4 ? 'Gray tile' : 'Matching tile');
+    if (blackAt !== undefined) place(blackAt, blackTile, 'Black tile');
+    const squares = Array.from({ length: 16 }, (_, index) => {
+      if (positions[index]) return positions[index];
+      const empty = document.createElement('span');
+      empty.className = 'cell empty';
+      empty.setAttribute('aria-hidden', 'true');
+      return empty;
+    });
+    board.replaceChildren(...squares, gesture);
+  }
+
+  placePracticeTiles({ heartAt: 5, partnerAt: 9 });
 
   function selectTile(selected) {
     source.setAttribute('aria-pressed', String(selected));
@@ -50,7 +74,7 @@
     }
     if (lesson === 5) {
       if (!reducedMotion.matches) {
-        const distance = bottomRight.offsetLeft - target.offsetLeft;
+        const distance = blackTile.offsetLeft - target.offsetLeft;
         await target.firstElementChild.animate(
           [
             { transform: 'translateX(0) scale(1)', opacity: 1 },
@@ -75,56 +99,38 @@
 
   function showCornerLesson() {
     lesson = 2;
-    const middleRight = board.querySelector('#intro-middle-right');
-    middleRight.before(partners[0]);
-    board.querySelector('#intro-yellow').after(middleRight);
-    partners[0].setAttribute('aria-label', 'Heart, row 2, column 3');
+    placePracticeTiles({ heartAt: 10, partnerAt: 9 });
     resetLesson('Make an L-shaped match');
   }
 
   function showRouteLesson() {
     lesson = 3;
-    cornerLayout = [...board.children];
-    const [yellow, topLeft, blue, middleLeft, , , , , , gesture] = cornerLayout;
-    board.append(topLeft, middleLeft, target, bottomRight, yellow,
-      partners[0], source, blue, partners[1], gesture);
-    yellow.setAttribute('aria-label', 'Yellow tile, row 2, column 2');
-    blue.setAttribute('aria-label', 'Blue tile, row 3, column 2');
-    partners[1].setAttribute('aria-label', 'Matching tile, row 3, column 3');
+    placePracticeTiles({ yellowAt: 9, blueAt: 13, heartAt: 7, partnerAt: 11, targetAt: 3 });
     board.classList.add('route-lesson');
     resetLesson('Slide around a corner');
   }
 
   function showAbsorptionLesson() {
     lesson = 4;
-    board.append(...cornerLayout);
+    placePracticeTiles({ partnerAt: 9 });
     board.classList.remove('route-lesson');
-    board.querySelector('#intro-yellow').setAttribute('aria-label', 'Yellow tile, row 1, column 1');
-    board.querySelector('#intro-blue').setAttribute('aria-label', 'Blue tile, row 1, column 3');
     board.classList.add('absorption-lesson');
-    partners[0].classList.add('empty');
     showTileFace(partners[1].firstElementChild, tiles.fixed);
     partners[1].classList.add('intro-gray');
-    partners[1].setAttribute('aria-label', 'Gray tile, row 2, column 2');
     showTileFace(source.firstElementChild, tiles.black);
     source.setAttribute('aria-label', 'Select black tile');
     resetLesson('Absorb a gray tile');
-    partners[0].setAttribute('aria-hidden', 'true');
   }
 
   function showChainLesson() {
     lesson = 5;
     board.classList.remove('absorption-lesson');
-    partners[0].classList.remove('empty');
+    placePracticeTiles({ heartAt: 10, partnerAt: 9, blackAt: 14 });
     partners[1].classList.remove('intro-gray');
-    partners[1].setAttribute('aria-label', 'Matching tile, row 2, column 2');
     showTileFace(partners[1].firstElementChild, tiles[heart.id]);
     showTileFace(source.firstElementChild, tiles[heart.id]);
     source.setAttribute('aria-label', 'Select bottom-left tile');
-    bottomRight.classList.remove('empty');
-    bottomRight.removeAttribute('aria-hidden');
-    bottomRight.setAttribute('aria-label', 'Black tile, row 3, column 3');
-    showTileFace(bottomRight.firstElementChild, tiles.black);
+    showTileFace(blackTile.firstElementChild, tiles.black);
     resetLesson('Match and absorb');
   }
 
@@ -204,14 +210,19 @@
   source.addEventListener('lostpointercapture', finishDrag);
   source.addEventListener('click', (event) => {
     if (!ignoreClick || event.detail === 0) {
-      selectTile(source.getAttribute('aria-pressed') !== 'true');
+      const selected = source.getAttribute('aria-pressed') !== 'true';
+      selectTile(selected);
+      if (selected && event.detail === 0) target.focus();
     }
   });
   target.addEventListener('click', completeMatch);
   function openGame(focusPlay = true) {
     intro.hidden = true;
     document.querySelector('main').hidden = false;
-    if (focusPlay) document.querySelector('#shuffle').focus();
+    if (focusPlay) {
+      saveTriplesRun();
+      document.querySelector('#shuffle').focus();
+    }
   }
   async function advanceLesson() {
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -271,4 +282,18 @@
     }
   }
   if (skipIntro) openGame(false);
+  if (window.parent !== window) {
+    window.addEventListener('message', (event) => {
+      if (event.source !== window.parent || event.data?.type !== 'triples:restore-run') return;
+      if (restoreTriplesRun(event.data.snapshot)) openGame(false);
+      else if (skipIntro) saveTriplesRun();
+    });
+  } else {
+    try {
+      if (restoreTriplesRun(sessionStorage.getItem(triplesRunKey))) openGame(false);
+      else if (skipIntro) saveTriplesRun();
+    } catch {
+      // Storage may be disabled for this page.
+    }
+  }
 }

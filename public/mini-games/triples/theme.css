@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Sigmar+One&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&family=Sigmar+One&display=swap');
 
 :root {
   --page-background: #12141d;
@@ -8,7 +8,8 @@
   --text-light: #f8f9ff;
   --text-dark: #101321;
   --text-muted: #d1cfe2;
-  --difficulty-accent: #b5d957;
+  --difficulty-accent: #fff5e5;
+  --difficulty-track: #5c5d62;
   --tile-radius: 20%;
   --tile-depth: clamp(3px, 1vw, 8px);
   --tile-transition: 150ms ease-out;
@@ -21,7 +22,7 @@
   --ui-font-size: 1rem;
   --ui-line-height: 1.45;
   --organ-font-weight: 400;
-  --ui-font: system-ui, sans-serif;
+  --ui-font: 'Roboto', system-ui, sans-serif;
   --tile-font-size: clamp(0.7rem, 3vw, 1.4rem);
   --organ-font: 'Sigmar One', 'Arial Black', system-ui, sans-serif;
   --tile-font-weight: 650;
